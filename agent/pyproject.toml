@@ -1,0 +1,20 @@
+[project]
+name = "intelligence-workbench-agent"
+version = "0.1.0"
+description = "Intelligence Workbench — Managed Deep Agent backend"
+requires-python = ">=3.14"
+dependencies = [
+    "managed-deepagents>=0.6.1",
+    # Bridges the agent to CopilotKit: shared state, frontend tools, agent context.
+    "copilotkit>=0.1.96",
+    # Providers. Both are installed so LLM_PROVIDER can flip without a re-sync.
+    "langchain-anthropic>=1.7.0",
+    "langchain-openai>=1.6.0",
+    # Web research.
+    "tavily-python>=0.8.0",
+]
+
+# NOTE: deliberately NOT using `--prerelease allow`. LangChain's docs recommend it
+# for managed-deepagents, but that is stale private-beta guidance — stable releases
+# exist, and uv applies the flag globally, which silently resolves langchain to an
+# alpha (1.4.0a2) and pydantic to a beta. See docs/ARCHITECTURE.md §6.

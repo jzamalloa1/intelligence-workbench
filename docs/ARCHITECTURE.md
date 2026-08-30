@@ -151,6 +151,23 @@ So the core prompt stays lean and only a thin per-provider delta differs:
 | Autonomy | Naturally persistent; keep instructions minimal | Effort is the dial; add a `user_updates_spec` block to stop tool-call narration |
 | Caching | Deep Agents prompt caching (`cache=`) | Automatic prefix caching; writes bill at 1.25× |
 
+### Two findings from running it
+
+**Async middleware is not optional.** A middleware that defines only
+`wrap_model_call` raises `NotImplementedError` on every real request — the
+LangGraph server invokes graphs asynchronously. It will still pass a synchronous
+unit test, which makes this easy to ship broken. Implement `awrap_model_call`
+too; `ProviderPromptMiddleware` shares one `_merge()` between both.
+
+**The provider toggle cannot be an environment variable.** MDA's project `.env`
+overrides the shell environment, so `LLM_PROVIDER=openai mda dev .` is silently
+ignored — the startup line still reads `provider=anthropic`. More importantly,
+the planned in-app provider toggle flips *while the server is already running*,
+which no env var can express. It has to be per-run runtime context
+(`context_schema` on `define_deep_agent`), with `LLM_PROVIDER` demoted to the
+default. Deferred to the milestone that builds the toggle; `build_model()` is
+already the single choke point that will need to read it.
+
 ### Cost control
 
 A deep agent multiplies calls: planning loop × subagent fan-out × tool retries. Four levers:

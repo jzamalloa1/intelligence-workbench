@@ -112,8 +112,8 @@ Open <http://localhost:3000>.
 ## Roadmap
 
 - [x] **0** — Transport spike: prove `mda dev` → CopilotKit
-- [ ] **1** — Repo scaffold, docs, CI hygiene
-- [ ] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent
+- [x] **1** — Repo scaffold, docs, git + remote
+- [x] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ verified end-to-end on Anthropic only — OpenAI blocked by `insufficient_quota` (account credits), not by code
 - [ ] **3** — Frontend shell talking to the agent end to end
 - [ ] **4** — Live panels: Plan Board, File Explorer, Subagent Timeline
 - [ ] **5** — Sandbox execution + charts + Artifact Canvas

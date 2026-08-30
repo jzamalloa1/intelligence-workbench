@@ -50,6 +50,19 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
   out to `uv run … langgraph dev` itself.
 - **The docs run ahead of the CLI.** Check `mda --help` before trusting a documented flag.
 
+### Middleware must implement BOTH hooks
+
+The LangGraph server runs graphs **asynchronously**. A middleware defining only
+`wrap_model_call` raises `NotImplementedError` on every real request while still passing a
+sync unit test. Always implement `awrap_model_call` alongside it and share the logic — see
+`middleware/provider_prompt.py`.
+
+### `.env` beats the shell
+
+MDA loads the project `.env` and it **overrides** exported shell variables, so
+`LLM_PROVIDER=openai mda dev .` does nothing. To switch providers, edit `.env` and restart.
+(The in-app toggle will use runtime context instead — see ARCHITECTURE §5.)
+
 ### Environment gotcha
 
 A conda env (`miniforge/envs/tf`) may be active and set `VIRTUAL_ENV`. uv prints
@@ -142,8 +155,8 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 ## Milestones
 
 - [x] **0** — Transport spike: `mda dev` → CopilotKit, incl. `CopilotKitMiddleware` in an MDA graph
-- [ ] **1** — Repo scaffold, docs, git + remote
-- [ ] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent
+- [x] **1** — Repo scaffold, docs, git + remote
+- [x] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ verified end-to-end on Anthropic only — OpenAI blocked by `insufficient_quota` (account credits), not by code
 - [ ] **3** — Frontend shell talking to the agent end to end
 - [ ] **4** — Live panels: Plan Board, File Explorer, Subagent Timeline
 - [ ] **5** — Sandbox execution + charts + Artifact Canvas
