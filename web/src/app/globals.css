@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/*
+  Theme tokens. Defined light-first on bare :root, then redefined for dark under
+  both prefers-color-scheme and an explicit [data-theme] so a future toggle wins
+  in either direction. Never give a colour its only definition inside a media
+  query — a system-default viewer gets no value at all.
+*/
+:root {
+  --wb-bg: oklch(98.4% 0.003 250);
+  --wb-panel: oklch(100% 0 0);
+  --wb-panel-alt: oklch(97% 0.004 250);
+  --wb-border: oklch(91% 0.006 250);
+  --wb-border-strong: oklch(84% 0.008 250);
+  --wb-text: oklch(24% 0.015 265);
+  --wb-muted: oklch(52% 0.012 265);
+  --wb-faint: oklch(66% 0.01 265);
+  --wb-accent: oklch(56% 0.16 262);
+  --wb-accent-soft: oklch(95% 0.03 262);
+  --wb-good: oklch(62% 0.14 155);
+  --wb-warn: oklch(72% 0.15 75);
+  --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wb-bg: oklch(17% 0.012 265);
+    --wb-panel: oklch(21% 0.014 265);
+    --wb-panel-alt: oklch(24% 0.015 265);
+    --wb-border: oklch(29% 0.016 265);
+    --wb-border-strong: oklch(36% 0.018 265);
+    --wb-text: oklch(94% 0.005 265);
+    --wb-muted: oklch(70% 0.014 265);
+    --wb-faint: oklch(55% 0.014 265);
+    --wb-accent: oklch(72% 0.14 262);
+    --wb-accent-soft: oklch(30% 0.05 262);
+    --wb-good: oklch(72% 0.15 155);
+    --wb-warn: oklch(78% 0.15 75);
+    --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+  }
+}
+
+:root[data-theme="dark"] {
+  --wb-bg: oklch(17% 0.012 265);
+  --wb-panel: oklch(21% 0.014 265);
+  --wb-panel-alt: oklch(24% 0.015 265);
+  --wb-border: oklch(29% 0.016 265);
+  --wb-border-strong: oklch(36% 0.018 265);
+  --wb-text: oklch(94% 0.005 265);
+  --wb-muted: oklch(70% 0.014 265);
+  --wb-faint: oklch(55% 0.014 265);
+  --wb-accent: oklch(72% 0.14 262);
+  --wb-accent-soft: oklch(30% 0.05 262);
+  --wb-good: oklch(72% 0.15 155);
+  --wb-warn: oklch(78% 0.15 75);
+  --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+}
+
+@theme inline {
+  --color-wb-bg: var(--wb-bg);
+  --color-wb-panel: var(--wb-panel);
+  --color-wb-panel-alt: var(--wb-panel-alt);
+  --color-wb-border: var(--wb-border);
+  --color-wb-border-strong: var(--wb-border-strong);
+  --color-wb-text: var(--wb-text);
+  --color-wb-muted: var(--wb-muted);
+  --color-wb-faint: var(--wb-faint);
+  --color-wb-accent: var(--wb-accent);
+  --color-wb-accent-soft: var(--wb-accent-soft);
+  --color-wb-good: var(--wb-good);
+  --color-wb-warn: var(--wb-warn);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* Explicit background: the page must not borrow the host's colour. */
+  background: var(--wb-bg);
+  color: var(--wb-text);
+  font-feature-settings: "cv05", "ss01";
+}
+
+/* Slim scrollbars — panels scroll a lot in this UI. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--wb-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--wb-border-strong);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

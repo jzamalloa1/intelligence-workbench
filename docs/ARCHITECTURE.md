@@ -113,6 +113,35 @@ CopilotKit's threads drawer reads Intelligence, not MDA. Two layers, not a confl
 
 ---
 
+## 4b. Wiring CopilotKit v2 — three corrections to the docs
+
+Every one of these was found by reading the installed package or by running it, and
+each contradicts published guidance.
+
+**`LangGraphAgent` comes from `@ag-ui/langgraph`, not `@copilotkit/runtime/langgraph`.**
+CopilotKit's own runtime reference shows the latter, but its type definitions mark
+that whole module `@deprecated since 1.68.2 — the v1 SDK is deprecated`. The v2
+runtime exports only `BasicAgent` and `BuiltInAgent`; LangGraph support comes from
+the AG-UI package, which v2's `agents` map accepts as any `AbstractAgent`.
+
+**Pin `@ag-ui/langgraph` to exactly `0.0.42`.** It ships as a transitive dependency
+of `@copilotkit/runtime`, pinned exactly, alongside `@ag-ui/core@0.0.57`. Installing
+it with a caret resolves `0.0.43`, which imports `aggregateTokenUsage` and
+`tokenUsageFromLangChainMetadata` from a newer core — every route then 500s with
+`Export ... doesn't exist in target module`.
+
+**`SqliteAgentRunner` does not exist** in `@copilotkit/runtime` 1.69.3 despite being
+documented. The runners actually exported are `InMemoryAgentRunner` and
+`IntelligenceAgentRunner`, so the no-Intelligence fallback loses thread history on
+restart rather than persisting to disk.
+
+Two smaller notes: `CopilotRuntime`'s options are a *union*, and the Intelligence
+variant additionally requires `identifyUser` (or `channels`) — omitting it is a type
+error, not a runtime one. And in Intelligence mode a run does not stream over the
+HTTP response; it returns a `joinToken` plus a `wss://` topic, and events arrive on
+that websocket. Verifying by curl therefore shows an empty-looking response even on
+success — check the agent server log for `Background run succeeded` instead.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports
