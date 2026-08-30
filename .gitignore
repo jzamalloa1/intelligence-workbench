@@ -1,0 +1,43 @@
+# ─── Secrets. Never commit real keys. ────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Managed Deep Agents build output ────────────────────────────────────────
+.mda/
+
+# Harbor eval run artifacts stay local; compiled evals/tasks/ are committed.
+evals/harbor-env.sh
+evals/harbor-jobs/
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ─── Node / Next.js ──────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.turbo/
+
+# ─── Local runtime state ─────────────────────────────────────────────────────
+# SqliteAgentRunner store used when INTELLIGENCE_API_KEY is absent
+*.sqlite
+*.sqlite3
+*.db
+
+# ─── OS / editor junk ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
