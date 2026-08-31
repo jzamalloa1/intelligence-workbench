@@ -12,6 +12,7 @@ compile time.
 """
 
 from copilotkit import CopilotKitMiddleware
+from langchain.agents.middleware import TodoListMiddleware
 from managed_deepagents import define_deep_agent
 
 from agent_core.models import build_model, describe
@@ -30,11 +31,17 @@ agent = define_deep_agent(
     # Order is explicit and never inferred.
     #   1. CopilotKit first  — installs shared state and frontend tools before
     #      anything else inspects the request.
-    #   2. Provider prompt   — needs the final system prompt, so it runs after
-    #      CopilotKit may have contributed context.
-    #   3. Call limit last   — the outermost ceiling on the whole run.
+    #   2. Todo list         — contributes the `write_todos` tool and a `todos`
+    #      state field. NOT provided by MDA or by deepagents' default profile
+    #      (verified: managed_deepagents has zero references to it, and the
+    #      compiled agent's tool list lacked write_todos until this was added).
+    #      The Plan Board panel has no data source without it.
+    #   3. Provider prompt   — appends provider steering, so it must run after
+    #      anything else that contributes to the system prompt.
+    #   4. Call limit last   — the outermost ceiling on the whole run.
     middleware=[
         CopilotKitMiddleware(),
+        TodoListMiddleware(),
         ProviderPromptMiddleware(),
         call_limit(),
     ],

@@ -142,6 +142,48 @@ HTTP response; it returns a `joinToken` plus a `wss://` topic, and events arrive
 that websocket. Verifying by curl therefore shows an empty-looking response even on
 success — check the agent server log for `Background run succeeded` instead.
 
+## 4c. Where the UI panels get their data
+
+Two different sources, because the agent does not expose them the same way.
+
+**`write_todos` does not exist until you add it.** Neither MDA nor `deepagents`'
+default profile includes `TodoListMiddleware` — verified three ways: the
+`managed_deepagents` package has zero references to it, `deepagents` only adds it
+in the opt-in `_openai_codex` harness profile, and the compiled agent's tool list
+was `delete, edit_file, execute, glob, grep, ls, read_file, research, task,
+write_file` with no `write_todos`. We add it explicitly in `agent.py`. Once added,
+`todos` appears in agent state and streams to the client in `STATE_SNAPSHOT` as
+`[{content, status}]`.
+
+**Files never appear in state when a sandbox is attached.** With `sandbox/`
+declared, the filesystem lives in the remote VM; the final state snapshot contains
+only `ag-ui`, `copilotkit`, `messages`, and `todos`. So the Workspace panel derives
+files from streamed `write_file` / `edit_file` **tool calls** instead. That has a
+side benefit: it keeps working if the sandbox is later removed, whereas a
+state-based reader would silently switch data sources.
+
+Both derivations are pure functions over `agent.messages` / `agent.state`
+(`src/lib/workbench.ts`) — no side effects during render, so there is no
+duplicate-event bookkeeping to get wrong. Note `edit_file` sends a patch rather
+than full content, so the viewer can only show content captured from `write_file`.
+
+### On the sandbox
+
+Enabling it is what makes `execute` real. Both backends *list* an `execute` tool,
+but `deepagents`' filesystem middleware gates it:
+
+```python
+if not supports_execution(resolved_backend):
+    return ToolMessage(content="Error: Execution not available...", status="error")
+```
+
+`StateBackend` does not implement execution, so without a sandbox the model can
+call `execute` and it always fails. With one, commands run in a real Linux VM
+(verified: `python3 -c "print(2**16)"` → `65536`, `uname -s` → `Linux`). The
+feature is gated per organization — without it every file operation raises
+`SandboxAuthenticationError: Sandbox feature is not enabled for this organization`,
+which surfaces as a generic "An internal error occurred" in the run stream.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

@@ -145,6 +145,14 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 
 ---
 
+- **`write_todos` must be added explicitly.** Neither MDA nor deepagents' default profile
+  includes `TodoListMiddleware`. Without it in `agent.py` the tool does not exist and the Plan
+  Board has no data. See ARCHITECTURE §4c.
+- **Files are not in agent state when a sandbox is attached.** Derive the Workspace panel from
+  `write_file` / `edit_file` tool calls, not from state. `todos` *is* in state.
+
+---
+
 ## Do not
 
 - Add FastAPI / `add_langgraph_fastapi_endpoint` / `LangGraphAGUIAgent`. MDA owns the server;
@@ -161,7 +169,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - [x] **1** — Repo scaffold, docs, git + remote
 - [x] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ verified end-to-end on Anthropic only — OpenAI blocked by `insufficient_quota` (account credits), not by code
 - [x] **3** — Frontend shell talking to the agent end to end
-- [ ] **4** — Live panels: Plan Board, File Explorer, Subagent Timeline
+- [x] **4** — Live panels: Plan Board, Workspace, Activity Timeline
 - [ ] **5** — Sandbox execution + charts + Artifact Canvas
 - [ ] **6** — Human-in-the-loop approvals, frontend tools
 - [ ] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
