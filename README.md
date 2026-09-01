@@ -45,7 +45,7 @@ never executes there. The runner is chosen by env var:
 | `INTELLIGENCE_API_KEY` | Runner | Result |
 |---|---|---|
 | set | `IntelligenceAgentRunner` | Durable threads, threads drawer, Inspector. History stored by CopilotKit. |
-| unset | `SqliteAgentRunner` | Durable locally. Nothing leaves your machine. Drawer/Inspector hidden. |
+| unset | `InMemoryAgentRunner` | Nothing leaves your machine. History lost on restart. Drawer hidden. |
 
 ---
 

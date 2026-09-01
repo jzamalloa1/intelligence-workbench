@@ -5,14 +5,22 @@ import {
   CopilotChat,
   useAgent,
   UseAgentUpdate,
+  useRenderTool,
 } from "@copilotkit/react-core/v2";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import { Panel, Pill } from "@/components/Panel";
+import { Panel } from "@/components/Panel";
 import { PlanBoard } from "@/components/PlanBoard";
+import { ToolCard } from "@/components/ToolCard";
 import { Workspace } from "@/components/Workspace";
 import { deriveFromMessages, readTodos } from "@/lib/workbench";
+import { INSPECTOR_ENABLED } from "@/lib/config";
 
 export default function Page() {
+  // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
+  // bare row per tool call that says nothing about what the agent did; this
+  // renders the tool, its target, and an expandable result instead.
+  useRenderTool({ name: "*", render: (p) => <ToolCard {...p} /> });
+
   // Without `updates` the hook does not subscribe and nothing here ever moves.
   // State drives the plan; messages drive files and activity.
   const { agent } = useAgent({
@@ -71,8 +79,15 @@ function Header({ running }: { running: boolean }) {
         </span>
       </div>
 
+      {/*
+        With the Inspector enabled CopilotKit mounts a launcher fixed at the
+        top-right, which overlaps anything we put there. Reserve space for it
+        rather than fight its z-index.
+      */}
       <span
-        className="flex items-center gap-1.5 text-[11.5px] text-wb-muted"
+        className={`flex items-center gap-1.5 text-[11.5px] text-wb-muted ${
+          INSPECTOR_ENABLED ? "mr-14" : ""
+        }`}
         aria-live="polite"
       >
         <span

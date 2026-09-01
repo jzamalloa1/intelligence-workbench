@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CopilotKit } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import "./globals.css";
+import { INSPECTOR_ENABLED } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "Intelligence Workbench",
@@ -24,6 +25,7 @@ export default function RootLayout({
           runtimeUrl="/api/copilotkit"
           agent="workbench"
           useSingleEndpoint={false}
+          enableInspector={INSPECTOR_ENABLED}
         >
           {children}
         </CopilotKit>

@@ -106,7 +106,7 @@ We select the runner by env var so the repo works either way:
 | `INTELLIGENCE_API_KEY` | Runner | Tradeoff |
 |---|---|---|
 | set | `IntelligenceAgentRunner` | Threads drawer + Inspector; history stored by CopilotKit |
-| unset | `SqliteAgentRunner` | Durable locally; nothing leaves the machine |
+| unset | `InMemoryAgentRunner` | Nothing leaves the machine; history lost on restart |
 
 Note the redundancy: MDA already persists threads via its LangGraph checkpointer, but
 CopilotKit's threads drawer reads Intelligence, not MDA. Two layers, not a conflict.
@@ -183,6 +183,47 @@ call `execute` and it always fails. With one, commands run in a real Linux VM
 feature is gated per organization — without it every file operation raises
 `SandboxAuthenticationError: Sandbox feature is not enabled for this organization`,
 which surfaces as a generic "An internal error occurred" in the run stream.
+
+## 4d. UI issues found by looking at it in a browser
+
+Verified with `web/scripts/inspect.mjs`, which drives the real page via
+playwright-core against the locally installed Chrome (no browser download) and
+captures screenshots plus the console log.
+
+**"View in Inspector (local only)" repeated once per assistant message.** Not a
+tool renderer, as it first appears — it is the *assistant message toolbar*
+(`assistantMessageToolbarInspectorLabel`), gated by `isInspectorEnabled`.
+CopilotKit turns the Inspector on by default in development, which also mounts a
+floating launcher over the top-right of the page. Fixed with
+`enableInspector={INSPECTOR_ENABLED}` on the provider, defaulting off and
+re-enabled with `NEXT_PUBLIC_ENABLE_INSPECTOR=true` — the Inspector is a good way
+to learn the AG-UI event flow, so it is one env var away rather than deleted.
+
+**Every tool call rendered as a bare row.** CopilotKit's built-in *wildcard* tool
+renderer (`WILDCARD_TOOL_NAME === "*"`) says nothing about what ran. Overridden
+via `useRenderTool({ name: "*", render })` with a card showing the tool, its
+target, and an expandable result.
+
+**`flushSync` console errors (unresolved, upstream).** Fires repeatedly from
+`@copilotkit/react-core` during a run. All three call sites are inside CopilotKit
+— an image-lightbox view transition and, more suspiciously,
+`flushSync(async () => ...)` in its action-execution path, which is an
+anti-pattern (flushSync with an async callback). Still present in 1.70.0, so
+upgrading does not fix it. Dev-mode console noise; functionality is unaffected.
+
+**Duplicate `@ag-ui/client` after upgrading to CopilotKit 1.70.0.** The root had
+0.0.57 (left from 1.69.3) while 1.70.0 nests 0.0.59, producing two `AbstractAgent`
+declarations and `Types have separate declarations of a private property '_debug'`.
+Fixed with npm `overrides` pinning `@ag-ui/client`/`core`/`encoder` to 0.0.59.
+
+**Still open — garbled transcript text during parallel delegation.** With several
+`task` subagents running at once, the transcript shows spliced sentences. The
+likely cause is subagent token streams reaching the transcript concurrently:
+deepagents streams nested subagent activity, and notably CopilotKit's own
+Deep Agents showcase sidesteps this by wrapping research in a tool that calls
+`.invoke()` "so its text doesn't stream to the frontend" rather than delegating.
+The fix direction is to route subagent output to the Activity panel and keep it
+out of the transcript, which is also better UX — not yet implemented.
 
 ## 5. Provider-agnostic model layer
 

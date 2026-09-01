@@ -68,22 +68,37 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-function summarize(tool: string, args: Record<string, unknown>): string {
+/**
+ * One-line description of what a tool call is doing.
+ *
+ * Returns "" rather than a placeholder when arguments have not streamed in yet,
+ * so callers can render nothing instead of a meaningless "search" / "command"
+ * label that later never updates.
+ */
+export function summarizeTool(
+  tool: string,
+  args: Record<string, unknown>,
+): string {
   switch (tool) {
     case "task":
-      return str(args.description) ?? str(args.subagent_type) ?? "subagent";
+      return str(args.description) ?? str(args.subagent_type) ?? "";
     case "research":
-      return str(args.query) ?? "search";
+      return str(args.query) ?? "";
     case "execute":
-      return str(args.command) ?? "command";
+      return str(args.command) ?? "";
     case "read_file":
-      return str(args.file_path) ?? "file";
+    case "write_file":
+    case "edit_file":
+      return str(args.file_path) ?? "";
     case "grep":
-      return str(args.pattern) ?? "pattern";
     case "glob":
-      return str(args.pattern) ?? "glob";
+      return str(args.pattern) ?? "";
+    case "write_todos": {
+      const todos = args.todos;
+      return Array.isArray(todos) ? `${todos.length} steps` : "";
+    }
     default:
-      return tool;
+      return "";
   }
 }
 
@@ -135,7 +150,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
           activity.push({
             id: call.id,
             tool,
-            label: summarize(tool, args),
+            label: summarizeTool(tool, args) || tool,
             status: "running",
           });
         }
