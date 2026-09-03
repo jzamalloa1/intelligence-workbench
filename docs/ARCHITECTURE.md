@@ -216,14 +216,36 @@ upgrading does not fix it. Dev-mode console noise; functionality is unaffected.
 declarations and `Types have separate declarations of a private property '_debug'`.
 Fixed with npm `overrides` pinning `@ag-ui/client`/`core`/`encoder` to 0.0.59.
 
-**Still open — garbled transcript text during parallel delegation.** With several
-`task` subagents running at once, the transcript shows spliced sentences. The
-likely cause is subagent token streams reaching the transcript concurrently:
-deepagents streams nested subagent activity, and notably CopilotKit's own
-Deep Agents showcase sidesteps this by wrapping research in a tool that calls
-`.invoke()` "so its text doesn't stream to the frontend" rather than delegating.
-The fix direction is to route subagent output to the Activity panel and keep it
-out of the transcript, which is also better UX — not yet implemented.
+**Garbled transcript during parallel delegation — fixed by disabling subagent
+token streaming.** With several `task` subagents in flight the transcript showed
+character-level splicing: "Replica promices", "independotion", "Let me
+dvs-memcached". Two hypotheses were tested and rejected before the real cause:
+
+1. *Duplicate stream modes.* `@ag-ui/langgraph` defaults to
+   `["events","values","updates","messages-tuple"]`, and both `events`
+   (`on_chat_model_stream`) and `messages-tuple` carry the same tokens —
+   confirmed by querying the LangGraph server directly, where each returned the
+   identical sentence. But dropping either one did not fix the splicing:
+   removing `events` silenced the UI entirely (it is the primary projection
+   source), and removing `messages-tuple` changed nothing.
+
+2. The actual cause is that **deepagents runs subagents inline via
+   `subagent.invoke()`** (`deepagents/middleware/subagents.py`), not as a
+   separate subgraph. Their LLM calls therefore emit `on_chat_model_stream`
+   events at the *root* of the run, and the frontend appends every one of them
+   to the parent's assistant message. With three researchers running at once,
+   three token streams interleave into one message.
+
+The fix is `disable_streaming=True` on subagent models only
+(`build_model(role, stream=False)`). Subagents behave identically — they just
+return their result in one piece rather than token by token — and the parent
+keeps full token streaming. The Activity panel still shows each subagent's
+progress, so nothing observable is lost.
+
+This is the same problem CopilotKit's own Deep Agents showcase sidesteps by not
+delegating at all, wrapping research in a tool that calls `.invoke()` internally
+"so its text doesn't stream to the frontend". Disabling streaming per-model keeps
+real subagents.
 
 ## 5. Provider-agnostic model layer
 

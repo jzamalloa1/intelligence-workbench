@@ -82,22 +82,33 @@ def _tier(role: Role) -> Tier:
     return getattr(profile, effective)
 
 
-def build_model(role: Role) -> BaseChatModel:
+def build_model(role: Role, *, stream: bool = True) -> BaseChatModel:
     """Return a configured chat model for ``role`` on the active provider.
 
     Returns an *instance* rather than a ``provider:model`` string because the
     OpenAI profile needs constructor arguments (Responses API, reasoning effort)
     that a string spec cannot express. ``define_deep_agent`` accepts instances.
+
+    ``stream=False`` disables token-level streaming for this model. That matters
+    for subagents: deepagents runs them inline via ``.invoke()``, so their token
+    events surface at the root of the run and the frontend splices them into the
+    parent's message — with several subagents in flight the transcript becomes
+    interleaved gibberish. Non-streaming subagents still work exactly the same;
+    they just return their result in one piece instead of token by token.
     """
     profile = active_profile()
     tier = _tier(role)
 
     if profile.provider == "anthropic":
-        return ChatAnthropic(model=tier.model)
+        return ChatAnthropic(model=tier.model, disable_streaming=not stream)
 
     # OpenAI: GPT-5.6 guidance is to use the Responses API for reasoning,
     # tool-calling, and multi-turn work — which is all three of what we do here.
-    kwargs: dict = {"model": tier.model, "use_responses_api": True}
+    kwargs: dict = {
+        "model": tier.model,
+        "use_responses_api": True,
+        "disable_streaming": not stream,
+    }
     if tier.effort:
         kwargs["reasoning"] = {"effort": tier.effort}
     return ChatOpenAI(**kwargs)

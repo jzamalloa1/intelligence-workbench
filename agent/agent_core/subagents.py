@@ -36,6 +36,8 @@ def build_subagents() -> list[dict[str, Any]]:
             ),
             "system_prompt": RESEARCHER,
             "tools": [research],
-            "model": build_model("worker"),
+            # Non-streaming: see build_model() — inline subagent token
+            # events otherwise splice into the parent transcript.
+            "model": build_model("worker", stream=False),
         },
     ]

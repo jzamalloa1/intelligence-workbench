@@ -151,6 +151,14 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **Files are not in agent state when a sandbox is attached.** Derive the Workspace panel from
   `write_file` / `edit_file` tool calls, not from state. `todos` *is* in state.
 
+- **Subagent models must have `disable_streaming=True`.** deepagents runs subagents inline via
+  `.invoke()`, so their token events surface at the run root and splice into the parent's
+  message — several in parallel produce interleaved gibberish. Use
+  `build_model(role, stream=False)` for subagents. ARCHITECTURE §4d.
+- **Provider errors are caught by `FriendlyErrorMiddleware`** and turned into a readable
+  assistant message. Without it a failure shows only "An internal error occurred" and the real
+  cause (bad key, no credits, rate limit) is buried in the agent server log.
+
 ---
 
 ## Do not
