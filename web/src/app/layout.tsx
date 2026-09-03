@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { CopilotKit } from "@copilotkit/react-core/v2";
-import "@copilotkit/react-core/v2/styles.css";
 import "./globals.css";
-import { INSPECTOR_ENABLED } from "@/lib/config";
+import { AgentProvider } from "@/components/AgentProvider";
 
 export const metadata: Metadata = {
   title: "Intelligence Workbench",
@@ -17,18 +15,15 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         {/*
-          useSingleEndpoint={false} matches the catch-all route at
-          /api/copilotkit/[[...slug]] — the runtime serves several sub-paths
-          (run, connect, threads) rather than one.
+          Reading INTELLIGENCE_API_KEY here (server-side, presence only, never
+          the value) lets the client-side runner toggle know whether "cloud"
+          means anything before the user ever sends a message — route.ts falls
+          back to the local runner regardless, so this is purely so the toggle
+          doesn't claim a mode that isn't actually configured.
         */}
-        <CopilotKit
-          runtimeUrl="/api/copilotkit"
-          agent="workbench"
-          useSingleEndpoint={false}
-          enableInspector={INSPECTOR_ENABLED}
-        >
+        <AgentProvider intelligenceAvailable={Boolean(process.env.INTELLIGENCE_API_KEY)}>
           {children}
-        </CopilotKit>
+        </AgentProvider>
       </body>
     </html>
   );

@@ -42,31 +42,56 @@ function buildAgent() {
 }
 
 /**
- * Intelligence is optional, so the runtime is built two different ways.
- *
- * With a key: durable threads, the threads drawer, and the Inspector — at the
- * cost of conversation history living on CopilotKit's servers.
- * Without: everything stays on this machine, but history dies with the process.
+ * Always available: threads live only in this process's memory, but nothing
+ * about it can fail mid-run — no extra network hop to a hosted service. This is
+ * what a long, heavy research turn (several subagents + sandbox execution)
+ * should run against, since the Intelligence runner's hosted realtime gateway
+ * gives up reconnecting after a fixed 60s and fails the run (see
+ * docs/ARCHITECTURE.md §4d — that ceiling isn't configurable from here).
  */
-const runtime = intelligenceApiKey
-  ? new CopilotRuntime({
-      agents: { [AGENT_ID]: buildAgent() },
-      intelligence: new CopilotKitIntelligence({ apiKey: intelligenceApiKey }),
-      // Required by the Intelligence variant of the options union: threads are
-      // stored per user, so it needs to know who is asking. This is a local
-      // single-user demo, so everyone is the same user — swap in real auth
-      // before exposing this to anyone else.
-      identifyUser: () => ({ id: "local", name: "Local User" }),
-    })
-  : new CopilotRuntime({
-      agents: { [AGENT_ID]: buildAgent() },
-      runner: new InMemoryAgentRunner(),
-    });
-
-const handler = createCopilotRuntimeHandler({
-  runtime,
+const localHandler = createCopilotRuntimeHandler({
+  runtime: new CopilotRuntime({
+    agents: { [AGENT_ID]: buildAgent() },
+    runner: new InMemoryAgentRunner(),
+  }),
   basePath: "/api/copilotkit",
 });
+
+/**
+ * Only built when a key is configured. Durable threads, the threads drawer,
+ * and the Inspector — at the cost of conversation history living on
+ * CopilotKit's servers, and the reconnect ceiling noted above.
+ */
+const intelligenceHandler = intelligenceApiKey
+  ? createCopilotRuntimeHandler({
+      runtime: new CopilotRuntime({
+        agents: { [AGENT_ID]: buildAgent() },
+        intelligence: new CopilotKitIntelligence({ apiKey: intelligenceApiKey }),
+        // Required by the Intelligence variant of the options union: threads are
+        // stored per user, so it needs to know who is asking. This is a local
+        // single-user demo, so everyone is the same user — swap in real auth
+        // before exposing this to anyone else.
+        identifyUser: () => ({ id: "local", name: "Local User" }),
+      }),
+      basePath: "/api/copilotkit",
+    })
+  : undefined;
+
+/**
+ * Runner choice is a per-request header, not a server restart. The frontend's
+ * runner toggle (`useRunnerMode` / the header pill) sets `x-runner: local` on
+ * every request via `<CopilotKit headers={...}>` when the user wants a heavy
+ * run to be immune to the Intelligence gateway's reconnect ceiling. Defaults to
+ * Intelligence whenever a key is configured, since that is what the threads
+ * drawer and Inspector need — and note flipping the header switches ALL
+ * requests, thread listing included, so the drawer goes empty while "local" is
+ * active (it has nothing to list from the in-memory runner).
+ */
+async function handler(request: Request): Promise<Response> {
+  const wantsLocal = request.headers.get("x-runner") === "local";
+  const active = wantsLocal || !intelligenceHandler ? localHandler : intelligenceHandler;
+  return active(request);
+}
 
 export const GET = handler;
 export const POST = handler;

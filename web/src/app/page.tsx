@@ -14,6 +14,7 @@ import { ToolCard } from "@/components/ToolCard";
 import { Workspace } from "@/components/Workspace";
 import { deriveFromMessages, readTodos } from "@/lib/workbench";
 import { INSPECTOR_ENABLED } from "@/lib/config";
+import { useRunnerMode } from "@/lib/runner-mode";
 
 export default function Page() {
   // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
@@ -79,25 +80,63 @@ function Header({ running }: { running: boolean }) {
         </span>
       </div>
 
-      {/*
-        With the Inspector enabled CopilotKit mounts a launcher fixed at the
-        top-right, which overlaps anything we put there. Reserve space for it
-        rather than fight its z-index.
-      */}
-      <span
-        className={`flex items-center gap-1.5 text-[11.5px] text-wb-muted ${
-          INSPECTOR_ENABLED ? "mr-14" : ""
-        }`}
-        aria-live="polite"
+      <div
+        className={`flex items-center gap-3 ${INSPECTOR_ENABLED ? "mr-14" : ""}`}
       >
-        <span
-          aria-hidden
-          className={`size-1.5 rounded-full ${
-            running ? "animate-pulse bg-wb-warn" : "bg-wb-good"
-          }`}
-        />
-        {running ? "Working" : "Idle"}
-      </span>
+        <RunnerToggle />
+
+        <span className="flex items-center gap-1.5 text-[11.5px] text-wb-muted" aria-live="polite">
+          <span
+            aria-hidden
+            className={`size-1.5 rounded-full ${
+              running ? "animate-pulse bg-wb-warn" : "bg-wb-good"
+            }`}
+          />
+          {running ? "Working" : "Idle"}
+        </span>
+      </div>
     </header>
+  );
+}
+
+/**
+ * Switches which backend runner the agent runs against — see route.ts. "Cloud"
+ * gets durable threads and the Inspector; "Local" is immune to the Intelligence
+ * gateway's fixed 60s reconnect ceiling, which is what a long multi-subagent
+ * research run can hit (docs/ARCHITECTURE.md §4d). Hidden when no
+ * INTELLIGENCE_API_KEY is configured, since there is then only one mode.
+ */
+function RunnerToggle() {
+  const { mode, setMode, intelligenceAvailable } = useRunnerMode();
+  if (!intelligenceAvailable) return null;
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Runner"
+      className="flex items-center gap-0.5 rounded-full border border-wb-border bg-wb-panel-alt p-0.5 text-[11px]"
+    >
+      {(["cloud", "local"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={mode === option}
+          onClick={() => setMode(option)}
+          title={
+            option === "cloud"
+              ? "Threads drawer + Inspector. May fail on a long, heavy run."
+              : "No persistence, no Inspector. Immune to the cloud reconnect ceiling."
+          }
+          className={`rounded-full px-2.5 py-1 capitalize transition-colors ${
+            mode === option
+              ? "bg-wb-accent-soft text-wb-accent"
+              : "text-wb-muted hover:text-wb-text"
+          }`}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
   );
 }
