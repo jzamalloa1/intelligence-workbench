@@ -247,6 +247,53 @@ delegating at all, wrapping research in a tool that calls `.invoke()` internally
 "so its text doesn't stream to the frontend". Disabling streaming per-model keeps
 real subagents.
 
+**"Runner connection dropped" mid-run on the Intelligence runner — a beta ceiling,
+not a bug in this project.** Surfaces as `agent_run_failed_event` /
+`agent_run_error_event` in the browser console, several times per occurrence,
+during a long turn (multiple subagents + sandbox `execute` calls, several
+minutes). Traced into `@copilotkit/channels-intelligence`'s
+`connectRealtimeGateway`: the runtime holds a Phoenix WebSocket to CopilotKit's
+hosted realtime gateway (`wss://realtime.intelligence.copilotkit.ai` by default),
+and if that connection drops mid-run it retries with backoff for
+`reconnectGiveUpMs` — **60 seconds by default** — before giving up and failing
+the run. `CopilotKitIntelligenceConfig` (the public constructor options on
+`CopilotKitIntelligence`) does not expose `reconnectGiveUpMs`, `timeoutMs`, or
+`connectTimeoutMs` — confirmed by reading its `.d.mts` — so there is no supported
+way to extend that window from `route.ts`. This is infrastructure on
+CopilotKit's hosted beta service, outside this repo's code.
+
+Practical mitigation: unset `INTELLIGENCE_API_KEY` for long/heavy runs — the
+`InMemoryAgentRunner` path talks straight to `mda dev` over plain HTTP with no
+extra hop, so it cannot hit this failure mode. Keep Intelligence on for shorter
+interactive sessions where the threads drawer and Inspector are worth it. This
+is exactly the env-toggle already built for a different reason (§4).
+
+**Source volume comes from fan-out, not from any single call.** `research()`
+already caps at `max_results=6` per call. What multiplies it is the `researcher`
+subagent prompt ("run several searches... before concluding") times however many
+subagents the lead delegates to in parallel — 4 subagents × several searches ×
+6 sources is a lot of ground covered for one question. Tightened both prompts
+(`agent_core/prompts.py`, `instructions.md`) to 2-3 searches per subagent and
+2-4 subagents per topic, framed as a cost tradeoff rather than a hard cap, so the
+agent can still go deeper when a question genuinely needs it.
+
+**Workspace file preview was plain-text for everything, including `.md`.**
+`FileViewer` piped `file.content` through one `<pre>` regardless of extension, so
+markdown reports were unreadable as reports. Fixed by rendering `.md` files
+through `react-markdown` (already a transitive dependency of
+`@copilotkit/react-ui` at 10.1.0 — added directly rather than reaching into the
+nested copy) with `remark-gfm` for tables, styled with the app's own `--wb-*`
+tokens rather than pulling in `@tailwindcss/typography`. Non-markdown files keep
+the monospace view with an extension badge.
+
+**No chart ever renders inline — Milestone 5 (Artifact Canvas) has not been
+built yet.** `instructions.md` told the agent it could "generate a chart" via
+the sandbox, but nothing in the UI consumes an image the agent writes — the
+Workspace panel's file viewer renders text and markdown, not images, and there
+is no dedicated chart tool or canvas component. Any chart the agent produced so
+far exists only as a file on disk in the sandbox VM. Reworded the instruction to
+stop implying otherwise until the Artifact Canvas is actually built.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports
@@ -330,6 +377,28 @@ Things that cost time and are not obvious from the docs:
 - `mda init` scaffolds `requires-python = ">=3.11"` and pins `managed-deepagents==0.6.1`
   exactly; we relax both.
 - **The docs run ahead of the CLI.** Verify flags against `mda --help` before trusting them.
+
+**Version audit (2026-09-02)**, re-checked directly against PyPI/npm rather than assumed —
+both ecosystems ship weekly, so a version pinned a few weeks ago is worth re-verifying rather
+than trusting:
+
+| Package | Installed | Latest | Note |
+|---|---|---|---|
+| `managed-deepagents` | 0.6.1 | 0.6.1 | current |
+| `copilotkit` (Python) | 0.1.96 | 0.1.96 | current |
+| `langchain` | 1.3.18 | 1.3.18 | current |
+| `langchain-anthropic` | 1.7.0 | 1.7.0 | current |
+| `langchain-openai` | 1.6.0 | 1.6.0 | current |
+| `langgraph` | 1.2.11 | 1.2.11 | current |
+| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.70.0 | 1.70.0 | current |
+| `@ag-ui/langgraph` | 0.0.42 | 0.0.43 | **held back deliberately** |
+| `next` | 16.3.4 | 16.3.4 | bumped, patch-only |
+
+The `@ag-ui/langgraph` pin is not staleness — `@copilotkit/runtime@1.70.0`'s own `package.json`
+still depends on exactly `0.0.42` (verified by reading it, not inferred), the same version that
+caused the duplicate-`@ag-ui/client` crash in §4d when tried at 0.0.43. Bumping our pin without
+CopilotKit bumping theirs would reintroduce that exact conflict. `next` had no such
+constraint, so it was bumped to 16.3.4.
 
 ---
 
