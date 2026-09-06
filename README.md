@@ -49,6 +49,112 @@ never executes there. The runner is chosen by env var:
 
 ---
 
+## MDA Agentic Workflow
+
+This is *this project's* decision flow, not MDA's in general — another MDA project wires its
+middleware order, subagents, and tools differently. Keep this section current: whenever
+`agent.py`, `middleware/`, `agent_core/subagents.py`, `tools/`, `sandbox/`, `memory.py`, or
+`identity.py` changes in a way that changes the flow below, update this section in the same
+change (see [CLAUDE.md](CLAUDE.md)).
+
+### Request lifecycle
+
+```mermaid
+flowchart TD
+    U["User message"] --> FE["Frontend — page.tsx\nuseAgent / CopilotChat"]
+    FE -->|"x-runner header\n(RunnerToggle)"| RT["route.ts\ncloud vs local CopilotRuntime"]
+    RT --> LG["LangGraph server — mda dev :2024\ngraphId = 'workbench'"]
+
+    subgraph MDA["MDA-injected — not authored here"]
+        SP["instructions.md\n→ system prompt"]
+        MEM["memory.py\n/memories/agent/AGENTS.md\nhot-loaded every run"]
+        ID["identity.py\nauth.langsmith_api_key()"]
+        SB["sandbox/__init__.py\nper-thread Linux VM"]
+    end
+    LG --> MDA
+
+    LG --> LEAD["Lead agent\nbuild_model('lead')"]
+    MDA -. "system prompt + memory" .-> LEAD
+
+    LEAD -->|"write_todos"| TODO["todos state\n→ Plan Board"]
+    LEAD -->|"task ×2-4, parallel"| SUB1["researcher subagent\nbuild_model('worker', stream=False)"]
+    LEAD -->|"task"| SUB2["researcher subagent"]
+    SUB1 -->|"research() ×2-3"| TAV["Tavily search\nmax_results=6"]
+    SUB2 -->|"research() ×2-3"| TAV
+    SUB1 -->|"write_file"| RES["/research/*.md"]
+    SUB2 -->|"write_file"| RES
+    SUB1 -->|"summary only"| LEAD
+    SUB2 -->|"summary only"| LEAD
+
+    LEAD -->|"execute (optional)"| SB
+    LEAD -->|"write_file"| REP["/reports/*.md — deliverable"]
+    LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
+
+    ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph"]
+    AGUI --> DERIVE["workbench.ts — pure derivation\ntodos ← state, files/activity ← tool-call messages"]
+    DERIVE --> PANELS["Plan Board · Workspace · Activity Timeline"]
+```
+
+Every model call above — lead **and** subagents — passes through the same middleware stack in
+`agent.py`, in this order, for reasons that matter (each one breaks if reordered):
+
+| # | Middleware | What it does | Why this position |
+|---|---|---|---|
+| 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
+| 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
+| 3 | `ProviderPromptMiddleware()` | Appends the active provider's prompt delta (`agent_core/prompts.py`) | Must run *after* anything else that contributes to the system prompt, so its addition is the final one. Runs per model call, so it reaches subagents too |
+| 4 | `FriendlyErrorMiddleware()` | Catches provider failures, returns a readable `AIMessage` instead of aborting | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
+| 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | Outermost — the last line of defense regardless of what happened above |
+
+### The subagent math
+
+- **Fan-out (breadth):** the lead decomposes the topic into 2-4 *distinct sub-questions* — different
+  facets of the topic, not reworded versions of one question — and delegates one `researcher`
+  subagent per sub-question. Several run in parallel because they're independent, not redundant.
+  (`instructions.md`)
+- **Search variance (recall):** each subagent, working its own single sub-question, runs 2-3
+  searches with different phrasing before concluding — insurance against one query wording
+  missing good results, not a way to cover more ground. (`RESEARCHER` in `agent_core/prompts.py`)
+- **Per-search cap:** each `research()` call returns at most 6 sources (`tools/research.py`).
+- Total ground covered ≈ subagents × searches-per-subagent × 6 — tune the first two multipliers
+  in the files above; the source-per-call cap is the `max_results=6` line in `tools/research.py`.
+
+### Why subagents don't stream token-by-token
+
+`researcher` subagents are built with `build_model("worker", stream=False)`
+(`agent_core/subagents.py`). deepagents runs subagents inline via `.invoke()`, not as a separate
+subgraph, so their tokens would otherwise surface at the root of the run and interleave with the
+lead's own streamed message when several run in parallel. Disabling streaming on subagent models
+only fixes this; the lead still streams normally. Full incident writeup:
+[docs/ARCHITECTURE.md §4d](docs/ARCHITECTURE.md).
+
+### File map — what governs each part of the flow
+
+| File | Role |
+|---|---|
+| `agent.py` | Assembles model, tools, subagents, and middleware order. The only place that matters for *sequencing* |
+| `agent_core/models.py` | Model selection by role (`lead`/`worker`/`cheap`) and provider — the only place model IDs appear |
+| `agent_core/prompts.py` | `RESEARCHER` subagent prompt; per-provider `PROVIDER_DELTA` |
+| `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
+| `instructions.md` | The lead agent's system prompt — synced to Context Hub by MDA, not settable in `agent.py` |
+| `tools/research.py` | The only tool besides the built-ins (`write_file`, `execute`, etc.) — Tavily search |
+| `middleware/*.py` | See the ordered table above |
+| `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
+| `identity.py` | Declares LangSmith-API-key auth for the deployment |
+| `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
+| `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Cloud/local runner dispatch on the `x-runner` header |
+| `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity data from agent state and messages |
+
+### Not wired yet
+
+No `skills/` directory exists — the Skills Rail in the table below has nothing to show until one
+is authored. No `schedules/`. No `interrupt_on` — nothing pauses for approval yet. Memory
+(`memory.py`) is active on the backend (the agent already reads and writes
+`/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there is no frontend
+Memory panel rendering it yet. All of this is tracked in [Roadmap](#roadmap).
+
+---
+
 ## What it demonstrates
 
 **Deep Agents**

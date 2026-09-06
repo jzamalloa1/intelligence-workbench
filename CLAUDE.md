@@ -130,6 +130,12 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - `tools/` — one module per tool group. `@tool(parse_docstring=True)`, unique names.
 - `middleware/` — order is explicit and never inferred.
 - `skills/<name>/SKILL.md` — frontmatter `name` must match the directory name.
+- **Whenever `agent.py`, `middleware/`, `agent_core/subagents.py`, `tools/`, `sandbox/`,
+  `memory.py`, or `identity.py` changes in a way that changes the request flow** (middleware
+  order, subagent roster, delegation math, a new tool, sandbox usage), **update the
+  "MDA Agentic Workflow" section of README.md in the same change.** It's the permanent,
+  project-specific map of query → lead agent → subagents → tools → result — it goes stale
+  silently otherwise, and it exists so this doesn't need re-explaining from scratch each time.
 
 **Frontend (`web/`)** — CopilotKit v2 (`@copilotkit/react-core/v2`).
 
