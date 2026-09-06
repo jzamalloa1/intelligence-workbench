@@ -20,6 +20,18 @@
   --wb-good: oklch(62% 0.14 155);
   --wb-warn: oklch(72% 0.15 75);
   --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.04);
+  /*
+    Chart categorical palette — dataviz skill reference palette, light steps.
+    Fixed slot order is the CVD-safety mechanism (validated adjacent-pair
+    Delta E for bar/line charts); never reassign a series to a different slot
+    once a chart has one, and never generate a 7th hue — fold into "Other".
+  */
+  --wb-series-1: #2a78d6; /* blue */
+  --wb-series-2: #eb6834; /* orange */
+  --wb-series-3: #1baf7a; /* aqua */
+  --wb-series-4: #eda100; /* yellow */
+  --wb-series-5: #e87ba4; /* magenta */
+  --wb-series-6: #008300; /* green */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +49,13 @@
     --wb-good: oklch(72% 0.15 155);
     --wb-warn: oklch(78% 0.15 75);
     --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+    /* Dark steps of the same six hues — a different palette, not a dimmed one. */
+    --wb-series-1: #3987e5;
+    --wb-series-2: #d95926;
+    --wb-series-3: #199e70;
+    --wb-series-4: #c98500;
+    --wb-series-5: #d55181;
+    --wb-series-6: #008300;
   }
 }
 
@@ -54,6 +73,12 @@
   --wb-good: oklch(72% 0.15 155);
   --wb-warn: oklch(78% 0.15 75);
   --wb-shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+  --wb-series-1: #3987e5;
+  --wb-series-2: #d95926;
+  --wb-series-3: #199e70;
+  --wb-series-4: #c98500;
+  --wb-series-5: #d55181;
+  --wb-series-6: #008300;
 }
 
 @theme inline {
@@ -69,6 +94,12 @@
   --color-wb-accent-soft: var(--wb-accent-soft);
   --color-wb-good: var(--wb-good);
   --color-wb-warn: var(--wb-warn);
+  --color-wb-series-1: var(--wb-series-1);
+  --color-wb-series-2: var(--wb-series-2);
+  --color-wb-series-3: var(--wb-series-3);
+  --color-wb-series-4: var(--wb-series-4);
+  --color-wb-series-5: var(--wb-series-5);
+  --color-wb-series-6: var(--wb-series-6);
 }
 
 html,

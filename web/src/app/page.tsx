@@ -10,6 +10,7 @@ import {
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Panel } from "@/components/Panel";
 import { PlanBoard } from "@/components/PlanBoard";
+import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { Workspace } from "@/components/Workspace";
 import { deriveFromMessages, readTodos } from "@/lib/workbench";
@@ -37,7 +38,7 @@ export default function Page() {
   const running = agent?.isRunning ?? false;
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);
-  const { files, activity } = useMemo(
+  const { files, activity, charts } = useMemo(
     () => deriveFromMessages(messages),
     [messages],
   );
@@ -59,9 +60,10 @@ export default function Page() {
           <ActivityTimeline activity={activity} />
         </div>
 
-        {/* Workspace gets its own column once there's room for it. */}
-        <div className="hidden min-h-0 xl:grid">
+        {/* Workspace + Sandbox get their own column once there's room for it. */}
+        <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3 xl:grid">
           <Workspace files={files} />
+          <SandboxPanel activity={activity} charts={charts} />
         </div>
       </main>
     </div>

@@ -52,8 +52,11 @@ computed answer instead of an asserted one — parsing data, checking a
 calculation. Write scripts and their output to `/reports/` so they surface in
 the workspace panel.
 
-The UI does not yet render images inline — if you produce a chart, save it as a
-file and say so in the chat rather than implying it will appear visually.
+If a comparison deserves a chart, compute the numbers (with `execute` if the
+math is nontrivial) and call `render_chart` with the result. Never generate a
+chart image file — the sandbox filesystem never reaches the frontend, so an
+image saved there is invisible; `render_chart`'s structured argument is what
+actually renders, in the Artifact Canvas. Bar or line only, never pie.
 
 ## Memory
 

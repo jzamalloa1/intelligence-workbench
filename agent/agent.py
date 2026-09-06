@@ -20,6 +20,7 @@ from agent_core.subagents import build_subagents
 from middleware.errors import FriendlyErrorMiddleware
 from middleware.guards import call_limit
 from middleware.provider_prompt import ProviderPromptMiddleware
+from tools.charts import render_chart
 from tools.research import research
 
 print(f"[agent] {describe()}")
@@ -27,7 +28,9 @@ print(f"[agent] {describe()}")
 agent = define_deep_agent(
     name="workbench",  # becomes the LangGraph assistant id == CopilotKit graphId
     model=build_model("lead"),
-    tools=[research],
+    # render_chart is lead-only: subagents gather and summarize, the lead
+    # synthesizes and is the one that decides something deserves a chart.
+    tools=[research, render_chart],
     subagents=build_subagents(),
     # Order is explicit and never inferred.
     #   1. CopilotKit first  — installs shared state and frontend tools before

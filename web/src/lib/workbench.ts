@@ -41,6 +41,21 @@ export interface Activity {
   result?: string;
 }
 
+export interface ChartSeries {
+  name: string;
+  values: number[];
+}
+
+export interface Chart {
+  id: string;
+  title: string;
+  chartType: "bar" | "line";
+  categories: string[];
+  series: ChartSeries[];
+  xLabel?: string;
+  yLabel?: string;
+}
+
 /** Tool calls that represent real work worth showing on the timeline. */
 const ACTIVITY_TOOLS = new Set([
   "task",
@@ -52,6 +67,12 @@ const ACTIVITY_TOOLS = new Set([
   "read_file",
 ]);
 const FILE_WRITE_TOOLS = new Set(["write_file", "edit_file"]);
+const CHART_TOOL = "render_chart";
+const MAX_CHART_SERIES = 6;
+
+function num(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
 
 /** Tool arguments stream in as partial JSON — never let a parse failure throw. */
 function parseArgs(raw: string | undefined): Record<string, unknown> {
@@ -97,19 +118,67 @@ export function summarizeTool(
       const todos = args.todos;
       return Array.isArray(todos) ? `${todos.length} steps` : "";
     }
+    case "render_chart":
+      return str(args.title) ?? "";
     default:
       return "";
   }
 }
 
+/**
+ * Builds a Chart from a `render_chart` call's raw, model-generated arguments —
+ * not the backend's validated response. Args stream in incomplete while the
+ * model is still generating, and the model can send a malformed shape (a
+ * length mismatch `render_chart` itself would reject) that still needs to
+ * render *something* rather than crash the panel. Returns undefined until the
+ * shape is usable; degrades a bad series rather than dropping the whole chart.
+ */
+function parseChart(id: string, args: Record<string, unknown>): Chart | undefined {
+  const title = str(args.title);
+  const chartType =
+    args.chart_type === "line" ? "line" : args.chart_type === "bar" ? "bar" : undefined;
+  const categories = Array.isArray(args.categories)
+    ? args.categories.filter((c): c is string => typeof c === "string")
+    : undefined;
+  const rawSeries = Array.isArray(args.series) ? args.series : undefined;
+
+  if (!title || !chartType || !categories || categories.length < 2 || !rawSeries?.length) {
+    return undefined;
+  }
+
+  const series: ChartSeries[] = rawSeries.slice(0, MAX_CHART_SERIES).flatMap((s) => {
+    const rec = s as Record<string, unknown>;
+    const name = str(rec.name);
+    const values = Array.isArray(rec.values) ? rec.values : undefined;
+    if (!name || !values) return [];
+    // Align to the category count rather than reject on mismatch — one bad
+    // series is more useful shown than the whole chart withheld.
+    return [{ name, values: categories.map((_, i) => num(values[i])) }];
+  });
+
+  if (series.length === 0) return undefined;
+
+  return {
+    id,
+    title,
+    chartType,
+    categories,
+    series,
+    xLabel: str(args.x_label),
+    yLabel: str(args.y_label),
+  };
+}
+
 export interface Derived {
   files: WorkspaceFile[];
   activity: Activity[];
+  charts: Chart[];
 }
 
 export function deriveFromMessages(messages: readonly Message[]): Derived {
   const files = new Map<string, WorkspaceFile>();
   const activity: Activity[] = [];
+  const charts = new Map<string, Chart>();
   // toolCallId -> index in `activity`, so results can be attached on arrival.
   const pending = new Map<string, number>();
 
@@ -145,6 +214,11 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
           }
         }
 
+        if (tool === CHART_TOOL) {
+          const chart = parseChart(call.id, args);
+          if (chart) charts.set(call.id, chart);
+        }
+
         if (ACTIVITY_TOOLS.has(tool)) {
           pending.set(call.id, activity.length);
           activity.push({
@@ -167,7 +241,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
     }
   }
 
-  return { files: [...files.values()], activity };
+  return { files: [...files.values()], activity, charts: [...charts.values()] };
 }
 
 export function readTodos(state: unknown): Todo[] {

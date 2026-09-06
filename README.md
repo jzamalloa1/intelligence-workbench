@@ -128,6 +128,49 @@ lead's own streamed message when several run in parallel. Disabling streaming on
 only fixes this; the lead still streams normally. Full incident writeup:
 [docs/ARCHITECTURE.md §4d](docs/ARCHITECTURE.md).
 
+### Who sees what — the sandbox/frontend visibility boundary
+
+This is the part that trips people up: **the frontend never reads the sandbox filesystem, and
+never reads LangGraph state beyond `todos`/`messages`.** The only two things that ever cross
+from the agent process to the browser are a tool call's streamed **arguments** and its **result**
+(text/JSON). Anything that happens purely as a side effect on the sandbox disk is invisible,
+full stop — no matter how the UI is written, it cannot show what it was never told about.
+
+Three scenarios, same rule, different outcomes:
+
+```mermaid
+flowchart TD
+    subgraph S1["A — a text report (works today)"]
+        direction LR
+        A1["write_file(path, content=full text)"] --> A2["Argument IS the content —\nit crosses in the tool call"]
+        A2 --> A3["Workspace panel renders it"]
+    end
+
+    subgraph S2["B — a chart image saved inside the sandbox (never worked, never will)"]
+        direction LR
+        B1["Script inside execute calls\nplt.savefig('/reports/chart.png')"] --> B2["Bytes land on the sandbox VM disk —\na plain file write, not a tool call"]
+        B2 -.no tool call ever names this file.-> B3["❌ Frontend never learns\nthe file exists"]
+    end
+
+    subgraph S3["C — the chart tool (what milestone 5 built)"]
+        direction LR
+        C1["render_chart(spec={type, categories, series})"] --> C2["spec IS the argument —\ntiny JSON, not an image"]
+        C2 --> C3["Artifact Canvas renders an\ninteractive chart from it"]
+    end
+```
+
+| What | Crosses to the browser? | Why |
+|---|---|---|
+| A tool call's **arguments** | Yes — always | Streamed as the model generates them; this is how every panel gets its data |
+| A tool call's **result** (text/JSON) | Yes — always | `execute`'s stdout, `research`'s sources, etc. |
+| Sandbox disk contents | **No — never**, unless named in an argument or result | The sandbox VM's filesystem is not part of the AG-UI event stream at all |
+| LangGraph state | Only `todos`, `messages`, `memory_contents`, `thread_model_call_count` | Confirmed by inspecting a compiled agent's state keys — see `docs/ARCHITECTURE.md` §4c |
+
+This is also why the chart tool takes small structured numbers rather than an image: a chart
+image would have to be base64-encoded into a `write_file` argument to be visible at all, which
+means the model generates tens of thousands of output tokens for something that's really a
+handful of numbers — the same visibility rule, just paid for the expensive way.
+
 ### File map — what governs each part of the flow
 
 | File | Role |
@@ -137,13 +180,15 @@ only fixes this; the lead still streams normally. Full incident writeup:
 | `agent_core/prompts.py` | `RESEARCHER` subagent prompt; per-provider `PROVIDER_DELTA` |
 | `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
 | `instructions.md` | The lead agent's system prompt — synced to Context Hub by MDA, not settable in `agent.py` |
-| `tools/research.py` | The only tool besides the built-ins (`write_file`, `execute`, etc.) — Tavily search |
+| `tools/research.py` | Tavily search — the only tool subagents get |
+| `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image) |
 | `middleware/*.py` | See the ordered table above |
 | `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
 | `identity.py` | Declares LangSmith-API-key auth for the deployment |
 | `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
 | `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Cloud/local runner dispatch on the `x-runner` header |
-| `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity data from agent state and messages |
+| `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity / Charts data from agent state and messages |
+| `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (charts) |
 
 ### Not wired yet
 
@@ -165,7 +210,8 @@ Memory panel rendering it yet. All of this is tracked in [Roadmap](#roadmap).
 | Subagents | Subagent Timeline — swimlanes, nested tool calls |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
 | Skills (progressive disclosure) | Skills Rail — which `SKILL.md` activated, and when |
-| Sandbox code execution | Console panel — streamed stdout, then the chart it produced |
+| Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
+| Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — interactive bar/line chart + table view |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
 | Summarization + context offload | Context Meter — token gauge, marks each compaction |
 | Durable memory (`AGENTS.md`) | Memory panel — what it carried across sessions |
@@ -222,7 +268,7 @@ Open <http://localhost:3000>.
 - [x] **2** — Agent core: dual-provider models + prompts, Tavily tool, first subagent<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ verified end-to-end on Anthropic only — OpenAI blocked by `insufficient_quota` (account credits), not by code
 - [x] **3** — Frontend shell talking to the agent end to end
 - [x] **4** — Live panels: Plan Board, Workspace, Activity Timeline
-- [ ] **5** — Sandbox execution + charts + Artifact Canvas
+- [x] **5** — Sandbox execution + charts + Artifact Canvas
 - [ ] **6** — Human-in-the-loop approvals, frontend tools
 - [ ] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
