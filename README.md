@@ -40,12 +40,21 @@ YOUR MACHINE
 Model provider keys stay in your processes and never reach CopilotKit.
 
 **CopilotKit Intelligence is optional.** It's a persistence/observability layer — your agent
-never executes there. The runner is chosen by env var:
+never executes there. `INTELLIGENCE_API_KEY` unset means only one mode ever exists —
+`InMemoryAgentRunner`, nothing leaves your machine, history lost on restart. Set, both modes
+exist and a header pill in the app header (Cloud/Local) switches between them per session:
 
-| `INTELLIGENCE_API_KEY` | Runner | Result |
+| Mode | Runner | Result |
 |---|---|---|
-| set | `IntelligenceAgentRunner` | Durable threads, threads drawer, Inspector. History stored by CopilotKit. |
-| unset | `InMemoryAgentRunner` | Nothing leaves your machine. History lost on restart. Drawer hidden. |
+| Cloud (default) | `IntelligenceAgentRunner` | Durable threads, threads drawer, Inspector. History stored by CopilotKit. |
+| Local | `InMemoryAgentRunner` | Nothing leaves your machine. History lost on restart. Immune to the Intelligence gateway's reconnect ceiling (see MDA Agentic Workflow below). |
+
+Switching **resets the visible conversation** — necessary, not a limitation: the client only
+negotiates once per agent instance whether Intelligence is available and caches it for that
+instance's lifetime, so the toggle forces a fresh instance (`key={mode}` on `<CopilotKit>`)
+rather than trying to change transport mid-session, which doesn't work in this stack. Verified
+live with `web/scripts/verify-toggle.mjs` (zero API cost — checks the negotiation re-fires
+without sending a prompt).
 
 ---
 

@@ -286,13 +286,34 @@ nested copy) with `remark-gfm` for tables, styled with the app's own `--wb-*`
 tokens rather than pulling in `@tailwindcss/typography`. Non-markdown files keep
 the monospace view with an extension badge.
 
-**No chart ever renders inline — Milestone 5 (Artifact Canvas) has not been
-built yet.** `instructions.md` told the agent it could "generate a chart" via
-the sandbox, but nothing in the UI consumes an image the agent writes — the
-Workspace panel's file viewer renders text and markdown, not images, and there
-is no dedicated chart tool or canvas component. Any chart the agent produced so
-far exists only as a file on disk in the sandbox VM. Reworded the instruction to
-stop implying otherwise until the Artifact Canvas is actually built.
+**No chart ever renders inline — fixed in Milestone 5.** `instructions.md` used to tell the
+agent it could "generate a chart" via the sandbox, but nothing in the UI consumed an image
+the agent wrote — the Workspace panel's file viewer rendered text and markdown, not images,
+and there was no dedicated chart tool or canvas component. Fixed with `render_chart`
+(`agent/tools/charts.py`) — structured data as the tool's arguments, not an image — and an
+Artifact Canvas component (Recharts). See README's "Who sees what" diagram for the full
+argument on why structured data, not a picture.
+
+**The runner toggle's first design was broken, and only a real end-to-end run caught it.**
+Every earlier test in this project ran on the Cloud/Intelligence runner by default (the env
+var was always set), so the Local path had never actually been exercised until Milestone 5's
+verification run deliberately used it. First attempt: `agent_run_failed` — *"REST run request
+failed: Unexpected token 'd', "data: {"ty"... is not valid JSON"*. Root cause, confirmed by
+reading `@copilotkit/core`'s source: `ProxiedCopilotRuntimeAgent.ensureRuntimeConfiguration()`
+negotiates transport with one `GET .../info` call and caches whether Intelligence is available
+on that agent **instance**, for its whole lifetime — it never re-checks. The toggle's `headers`
+function only changes what the *server* does on later requests (route.ts correctly routed to
+`InMemoryAgentRunner`), but the *client* had already committed to `IntelligenceAgent`'s
+websocket-oriented protocol during the page-load negotiation, before the toggle was ever
+touched — so it kept using that protocol against what was now a plain AG-UI SSE endpoint,
+and its REST-run response parser choked on the raw `data: {...}` chunk. Fixed with
+`key={mode}` on `<CopilotKit>` (`AgentProvider.tsx`): switching modes now remounts the
+provider, forcing a fresh agent instance and a fresh negotiation that reads the current
+header. Cost: switching resets the visible conversation — correct, not a compromise, since an
+Intelligence-backed thread and an in-memory one were never the same thread. Verified two ways
+before trusting it: `web/scripts/verify-toggle.mjs` confirms the `/info` negotiation re-fires
+with the right header on every toggle, at zero API cost; then a real end-to-end research +
+sandbox + chart run against the Local runner completed clean.
 
 ## 5. Provider-agnostic model layer
 

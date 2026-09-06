@@ -127,8 +127,8 @@ function RunnerToggle() {
           onClick={() => setMode(option)}
           title={
             option === "cloud"
-              ? "Threads drawer + Inspector. May fail on a long, heavy run."
-              : "No persistence, no Inspector. Immune to the cloud reconnect ceiling."
+              ? "Threads drawer + Inspector. May fail on a long, heavy run. Switching starts a new conversation."
+              : "No persistence, no Inspector. Immune to the cloud reconnect ceiling. Switching starts a new conversation."
           }
           className={`rounded-full px-2.5 py-1 capitalize transition-colors ${
             mode === option

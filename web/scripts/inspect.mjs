@@ -6,6 +6,7 @@
  *   node scripts/inspect.mjs "your prompt here"
  *   WAIT_MS=180000 node scripts/inspect.mjs          # wait longer
  *   SKIP_PROMPT=1 node scripts/inspect.mjs           # just load the page
+ *   RUNNER=local node scripts/inspect.mjs "..."      # click the Local runner toggle first
  *
  * Writes screenshots + report to scripts/.out/ (gitignored).
  */
@@ -46,6 +47,10 @@ page.on("response", (r) => {
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.screenshot({ path: `${OUT}01-initial.png` });
 
+if (process.env.RUNNER === "local") {
+  await page.getByRole("radio", { name: "local" }).click();
+}
+
 if (!SKIP_PROMPT) {
   const box = page
     .locator('textarea, [contenteditable="true"], input[type="text"]')
@@ -61,6 +66,15 @@ if (!SKIP_PROMPT) {
     await page.screenshot({ path: `${OUT}${String(i).padStart(2, "0")}-t${t / 1000}s.png` });
   }
 }
+
+// Best-effort: switch to the Sandbox panel's Charts tab so the final
+// screenshot actually shows a rendered chart rather than whatever tab
+// happened to be selected (Console is the default).
+await page
+  .getByRole("tab", { name: "Charts" })
+  .click({ timeout: 5_000 })
+  .catch(() => {});
+await page.waitForTimeout(500);
 
 await page.screenshot({ path: `${OUT}99-final-full.png`, fullPage: true });
 
