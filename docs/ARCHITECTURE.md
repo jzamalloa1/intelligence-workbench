@@ -401,13 +401,14 @@ Things that cost time and are not obvious from the docs:
   exactly; we relax both.
 - **The docs run ahead of the CLI.** Verify flags against `mda --help` before trusting them.
 
-**Version audit (2026-09-02)**, re-checked directly against PyPI/npm rather than assumed —
-both ecosystems ship weekly, so a version pinned a few weeks ago is worth re-verifying rather
-than trusting:
+**Version audit (re-checked 2026-09-11)**, against PyPI/npm rather than assumed — both
+ecosystems ship weekly, so a version pinned a few weeks ago is worth re-verifying rather than
+trusting. The MDA row below is the proof: it went from "current" to three releases behind in
+**nine days**.
 
 | Package | Installed | Latest | Note |
 |---|---|---|---|
-| `managed-deepagents` | 0.6.1 | 0.6.1 | current |
+| `managed-deepagents` | 0.7.2 | 0.7.2 | bumped from 0.6.1 on 2026-09-11 |
 | `copilotkit` (Python) | 0.1.96 | 0.1.96 | current |
 | `langchain` | 1.3.18 | 1.3.18 | current |
 | `langchain-anthropic` | 1.7.0 | 1.7.0 | current |
@@ -423,6 +424,24 @@ caused the duplicate-`@ag-ui/client` crash in §4d when tried at 0.0.43. Bumping
 CopilotKit bumping theirs would reintroduce that exact conflict. `next` had no such
 constraint, so it was bumped to 16.3.4.
 
+**On the 0.6.1 → 0.7.2 bump.** `uv tool install` pins at install time and never
+self-upgrades, and `uv.lock` governs the project venv regardless of a `>=` constraint — so
+both surfaces sat on 0.6.1 while three stable releases shipped (0.7.0 Sep 8, 0.7.1 and 0.7.2
+Sep 10). Upgrade both with `uv tool upgrade managed-deepagents` and
+`uv sync --upgrade-package managed-deepagents`. What the changelog flags as breaking:
+`runtime.identity` → `serverInfo` with *no compatibility shim*, and the MCP rename above.
+Neither touches us — we import only `define_deep_agent`, `define_memory`, `define_identity`,
+`auth`, and `define_sandbox`. 0.7.2's "require local provider keys for direct models" lands on
+our `build_model()` instances but was a non-event, since the keys are in `.env` already.
+Verified after the bump: `import agent` clean, `mda dev` compiles and registers `workbench`,
+`verify-toggle.mjs` passes, and a live research + `render_chart` run completed with zero
+console errors.
+
+**Known drift, deliberately not fixed:** the interpreter is **3.14.0rc3**, not stable —
+a leftover from the uv 0.8.22 stale-index era (§6 above), which uv now warns about on every
+command. `cpython-3.14.7` is available via `uv python install 3.14`. Docs elsewhere that say
+"Python 3.14 (latest stable)" are, strictly, describing an RC.
+
 ---
 
 ## 7. MDA constraints that shape the design
@@ -432,7 +451,11 @@ From MDA's authoring contract — these are not preferences, they're hard limits
 - **Never set** `backend`, `store`, `checkpointer`, `memory`, `skills`, or `system_prompt` in
   `define_deep_agent`. The managed runtime injects them. (This is also why the code cannot be
   shared with an OSS `create_deep_agent` build.)
-- **No MCP connectors.** `define_mcp_servers` was removed. Authored tools only.
+- **MCP: removed in 0.6.x, reinstated in 0.7.0** as `define_mcp(...)` taking a `servers` map
+  (`connectors.mcp` is a deprecated alias, removed in 0.8.0). Verified present on 0.7.2 by
+  introspecting the installed package. We stay on authored tools only — now a design choice,
+  not a platform constraint. A good reminder that on a public-beta SDK a "hard constraint"
+  has a shelf life: re-verify against the installed package, not against notes.
 - `name=` is required and must be a static identifier string.
 - Schedule declarations must be **static literals** — the compiler extracts them without
   executing your code.

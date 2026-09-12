@@ -105,10 +105,16 @@ deploy time.
 - **Never set** `backend`, `store`, `checkpointer`, `memory`, `skills`, `system_prompt` in
   `define_deep_agent` — the runtime injects them.
 - Author-set fields only: `name`, `model`, `tools`, `middleware`, `subagents`, `permissions`,
-  `interrupt_on`, `response_format`, `context_schema`, `cache`, `debug`, `metadata`.
+  `interrupt_on`, `response_format`, `context_schema`, `cache`, `debug`, `metadata`,
+  `disable_memory`. (Read off `inspect.signature(define_deep_agent)` on 0.7.2 — re-check it
+  after an SDK bump rather than trusting this list; `disable_memory` arrived in 0.7.x.)
 - `name=` required, static string, `[A-Za-z][A-Za-z0-9_-]*`. It becomes the LangGraph assistant
   ID — and therefore CopilotKit's `graphId`.
-- **No MCP.** `define_mcp_servers` / `connectors/mcp.*` were removed. Authored tools only.
+- **MCP is back as of 0.7.0** — `define_mcp(...)` with a `servers` map (verified present on
+  0.7.2; `define_mcp_servers` is gone, `connectors.mcp` is a deprecated alias removed in
+  0.8.0). This project still uses **authored tools only** — that is now a choice, not a
+  platform limit. `connections` (workspace secrets / user-owned OAuth) also exists in 0.7.x
+  and is likewise unused here.
 - Schedules must be **static literals** — no env vars, function calls, or computed values.
 - Memory is deployment-shared. No per-user memory. Never store personal data or credentials
   there, and treat its contents as untrusted input.
