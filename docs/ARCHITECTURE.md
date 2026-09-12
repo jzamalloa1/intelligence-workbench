@@ -385,10 +385,12 @@ question can be run both ways and compared.
 
 Things that cost time and are not obvious from the docs:
 
-- **Don't use `--prerelease allow`.** LangChain's docs say to install `managed-deepagents` with
-  it. That is stale private-beta guidance — stable releases exist (0.6.1+). Worse, uv applies
-  the flag globally, so it silently resolved `langchain` to **1.4.0a2** and `pydantic` to
-  **2.14.0b1**.
+- **Don't use `--prerelease allow`.** The private-beta docs said to install
+  `managed-deepagents` with it — stable releases exist (0.6.1+), and uv applies the flag
+  globally, so it silently resolved `langchain` to **1.4.0a2** and `pydantic` to **2.14.0b1**.
+  Re-checked 2026-09-11: the current quickstart no longer mentions the flag, so the docs and
+  this project now agree. Kept here because the failure mode is invisible — nothing errors,
+  you just end up on alphas.
 - **`mda` requires Python ≥ 3.10.** Under 3.9, uv resolves an ancient 0.4.0 which crashes on
   import (`str | SomeTypedDict` — PEP 604 at runtime).
 - **Python 3.14 is fine.** The whole stack installs and imports clean; nothing is downgraded or

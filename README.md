@@ -264,9 +264,15 @@ cd web && npm install && npm run dev
 
 Open <http://localhost:3000>.
 
-> **Note:** LangChain's docs tell you to install `managed-deepagents` with `--prerelease allow`.
-> That is stale private-beta guidance — stable releases exist, and the flag will silently pull
-> `langchain` into an alpha. Don't use it.
+> **Note:** if you find older guidance telling you to install `managed-deepagents` with
+> `--prerelease allow`, ignore it — stable releases exist, and because uv applies the flag
+> globally it silently pulls `langchain` into an alpha. The current quickstart no longer
+> recommends it.
+>
+> This quickstart also installs the CLI as a uv tool (pinning **its own** interpreter to
+> 3.14) rather than the documented `uvx`/`uv run mda` form — under Python 3.9, uv resolves an
+> ancient `mda` 0.4.0 that crashes on import. `uv run mda dev` works here too, since
+> `managed-deepagents` is a project dependency as well.
 
 ---
 

@@ -40,9 +40,10 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
 
 - **Python only via uv.** `uv sync` / `uv run …` inside `agent/`. Never bare `python` or `pip`.
 - **Python 3.14**, uv **≥ 0.12**.
-- **Never install with `--prerelease allow`.** LangChain's docs say to; it's stale beta
-  guidance. Stable `managed-deepagents` exists, and the flag is global in uv — it will pull
-  `langchain` into an alpha. Install the CLI as:
+- **Never install with `--prerelease allow`.** The private-beta docs said to; the current
+  quickstart no longer does (re-checked 2026-09-11 — the docs now agree with us). Stable
+  `managed-deepagents` exists, and the flag is global in uv — it will pull `langchain` into an
+  alpha. Install the CLI as:
   ```bash
   uv tool install --python 3.14 managed-deepagents
   ```

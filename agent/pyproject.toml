@@ -14,7 +14,7 @@ dependencies = [
     "tavily-python>=0.8.0",
 ]
 
-# NOTE: deliberately NOT using `--prerelease allow`. LangChain's docs recommend it
-# for managed-deepagents, but that is stale private-beta guidance — stable releases
-# exist, and uv applies the flag globally, which silently resolves langchain to an
-# alpha (1.4.0a2) and pydantic to a beta. See docs/ARCHITECTURE.md §6.
+# NOTE: deliberately NOT using `--prerelease allow`. The private-beta docs recommended
+# it for managed-deepagents; stable releases exist, and uv applies the flag globally,
+# which silently resolves langchain to an alpha (1.4.0a2) and pydantic to a beta. The
+# current quickstart no longer recommends it. See docs/ARCHITECTURE.md §6.
