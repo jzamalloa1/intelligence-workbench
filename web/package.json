@@ -8,10 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ag-ui/langgraph": "0.0.42",
-    "@copilotkit/react-core": "^1.70.0",
-    "@copilotkit/react-ui": "^1.70.0",
-    "@copilotkit/runtime": "^1.70.0",
+    "@ag-ui/langgraph": "0.0.43",
+    "@copilotkit/react-core": "^1.73.0",
+    "@copilotkit/react-ui": "^1.73.0",
+    "@copilotkit/runtime": "^1.73.0",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -28,10 +28,5 @@
     "playwright-core": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "overrides": {
-    "@ag-ui/client": "0.0.59",
-    "@ag-ui/core": "0.0.59",
-    "@ag-ui/encoder": "0.0.59"
   }
 }

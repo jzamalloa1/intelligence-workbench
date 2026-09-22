@@ -101,12 +101,13 @@ Intelligence is a persistence and observability layer — durable threads, the I
 cross-instance scaling — reached over an outbound websocket from the runtime. **The agent never
 executes there.**
 
-We select the runner by env var so the repo works either way:
+`INTELLIGENCE_API_KEY` decides whether Cloud mode *exists*; the in-app pill decides which one a
+session *uses*, defaulting to Local (see §4d — Cloud loses long runs):
 
-| `INTELLIGENCE_API_KEY` | Runner | Tradeoff |
+| Mode | Runner | Tradeoff |
 |---|---|---|
-| set | `IntelligenceAgentRunner` | Threads drawer + Inspector; history stored by CopilotKit |
-| unset | `InMemoryAgentRunner` | Nothing leaves the machine; history lost on restart |
+| Local (default) | `InMemoryAgentRunner` | Nothing leaves the machine; history lost on restart |
+| Cloud | `IntelligenceAgentRunner` | Threads drawer + Inspector; history stored by CopilotKit; 60s reconnect ceiling |
 
 Note the redundancy: MDA already persists threads via its LangGraph checkpointer, but
 CopilotKit's threads drawer reads Intelligence, not MDA. Two layers, not a conflict.
@@ -124,7 +125,9 @@ that whole module `@deprecated since 1.68.2 — the v1 SDK is deprecated`. The v
 runtime exports only `BasicAgent` and `BuiltInAgent`; LangGraph support comes from
 the AG-UI package, which v2's `agents` map accepts as any `AbstractAgent`.
 
-**Pin `@ag-ui/langgraph` to exactly `0.0.42`.** It ships as a transitive dependency
+**Pin `@ag-ui/langgraph` to the exact version `@copilotkit/runtime` depends on.** (On
+1.70.0 that was `0.0.42`; on 1.73.0 it is `0.0.43` — the rule is "match theirs", not any
+particular number.) It ships as a transitive dependency
 of `@copilotkit/runtime`, pinned exactly, alongside `@ag-ui/core@0.0.57`. Installing
 it with a caret resolves `0.0.43`, which imports `aggregateTokenUsage` and
 `tokenUsageFromLangChainMetadata` from a newer core — every route then 500s with
@@ -340,6 +343,27 @@ the card against the real payload shape in a throwaway route and asserting the e
 **Not verified:** the live round trip — that the run actually pauses and resumes — which needs a
 real agent run.
 
+**The reconnect ceiling hit again, and the agent log settled what it costs.** A Milestone 6 test
+run on Cloud mode failed in the browser with four `Runner connection dropped` errors
+(`IntelligenceAgent.createThreadNotifications`, Phoenix `Socket.onConnMessage`). The agent server
+told the other half of the story: `Background run succeeded`, `run_exec_ms=356661` — the run
+executed for **six minutes and completed**. So this failure mode does not break the agent; it
+throws away a finished run's output before the browser sees it. Three changes followed:
+
+1. **Local is now the default mode** (`AgentProvider.tsx`). Runs here are routinely minutes
+   long, and Milestone 6's approval gate adds human-length pauses, so a 60s reconnect budget is
+   a poor fit. Cloud remains one click away for the threads drawer and Inspector.
+2. **The drop is surfaced in the UI**, via `<CopilotKit onError>` → a banner that says the run
+   probably *finished* and offers to switch to Local. Previously it existed only as console
+   noise, which reads as "the agent failed" when the agent did nothing wrong.
+3. **CopilotKit 1.70.0 → 1.73.0.** Their release notes claim no fix for this specifically
+   (1.71.2 mentions unspecified "runtime hardening"), so the upgrade is not a claimed remedy —
+   but it is three minors of fixes, and it *released the `@ag-ui/langgraph` pin*: 1.73.0 depends
+   on `0.0.43`, the version §4b had us holding back from. The npm `overrides` block is gone too
+   — with 1.73.0's own dependencies internally consistent, a clean lockfile re-resolve yields a
+   single `@ag-ui/client@0.0.59` without it. Verified with tsc, `next build`, and
+   `verify-toggle.mjs`; **not** verified against a live long Cloud run.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports
@@ -439,8 +463,8 @@ trusting. The MDA row below is the proof: it went from "current" to three releas
 | `langchain-anthropic` | 1.7.0 | 1.7.0 | current |
 | `langchain-openai` | 1.6.0 | 1.6.0 | current |
 | `langgraph` | 1.2.11 | 1.2.11 | current |
-| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.70.0 | 1.70.0 | current |
-| `@ag-ui/langgraph` | 0.0.42 | 0.0.43 | **held back deliberately** |
+| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.73.0 | 1.73.0 | bumped from 1.70.0 on 2026-09-22 |
+| `@ag-ui/langgraph` | 0.0.43 | 0.0.43 | pin released — 1.73.0 depends on 0.0.43 |
 | `next` | 16.3.4 | 16.3.4 | bumped, patch-only |
 
 The `@ag-ui/langgraph` pin is not staleness — `@copilotkit/runtime@1.70.0`'s own `package.json`

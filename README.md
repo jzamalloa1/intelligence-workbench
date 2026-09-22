@@ -42,12 +42,14 @@ Model provider keys stay in your processes and never reach CopilotKit.
 **CopilotKit Intelligence is optional.** It's a persistence/observability layer — your agent
 never executes there. `INTELLIGENCE_API_KEY` unset means only one mode ever exists —
 `InMemoryAgentRunner`, nothing leaves your machine, history lost on restart. Set, both modes
-exist and a header pill in the app header (Cloud/Local) switches between them per session:
+exist and a pill in the app header (Local/Cloud) switches between them per session. **Local is
+the default** — Cloud's gateway abandons a run after a 60s reconnect window, and runs here are
+routinely minutes long:
 
 | Mode | Runner | Result |
 |---|---|---|
-| Cloud (default) | `IntelligenceAgentRunner` | Durable threads, threads drawer, Inspector. History stored by CopilotKit. |
-| Local | `InMemoryAgentRunner` | Nothing leaves your machine. History lost on restart. Immune to the Intelligence gateway's reconnect ceiling (see MDA Agentic Workflow below). |
+| Local (default) | `InMemoryAgentRunner` | Nothing leaves your machine. History lost on restart. No reconnect ceiling. |
+| Cloud | `IntelligenceAgentRunner` | Durable threads, threads drawer, Inspector. History stored by CopilotKit. Drops long runs — see below. |
 
 Switching **resets the visible conversation** — necessary, not a limitation: the client only
 negotiates once per agent instance whether Intelligence is available and caches it for that
