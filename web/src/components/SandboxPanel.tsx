@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import type { Activity, Chart } from "@/lib/workbench";
+import { useWorkbenchUI } from "@/lib/workbench-ui";
 import { ArtifactCanvas } from "./ArtifactCanvas";
 import { ConsolePanel } from "./ConsolePanel";
 import { Panel, Pill } from "./Panel";
-
-type Tab = "console" | "charts";
 
 /**
  * One panel, two tabs — Console (sandbox `execute` output) and Charts
@@ -14,9 +12,12 @@ type Tab = "console" | "charts";
  * sandbox-adjacent output that's usually sparse, and stacking a third and
  * fourth panel into an already-narrow column crowds out the Workspace panel
  * next to it.
+ *
+ * The selected tab lives in WorkbenchUIContext, not local state, so the agent
+ * can switch it through the `focus_panel` frontend tool.
  */
 export function SandboxPanel({ activity, charts }: { activity: Activity[]; charts: Chart[] }) {
-  const [tab, setTab] = useState<Tab>("console");
+  const { sandboxTab: tab, setSandboxTab: setTab } = useWorkbenchUI();
   const commandCount = activity.filter((a) => a.tool === "execute").length;
 
   return (

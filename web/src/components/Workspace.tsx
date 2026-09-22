@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import type { WorkspaceFile } from "@/lib/workbench";
+import { useWorkbenchUI } from "@/lib/workbench-ui";
 import { EmptyState, Panel, Pill } from "./Panel";
 
 /**
@@ -14,7 +14,12 @@ import { EmptyState, Panel, Pill } from "./Panel";
  * remote VM and never lands in LangGraph state. See src/lib/workbench.ts.
  */
 export function Workspace({ files }: { files: WorkspaceFile[] }) {
-  const [open, setOpen] = useState<WorkspaceFile | null>(null);
+  // Which file is open lives in WorkbenchUIContext (by path, not by object) so
+  // the agent's `focus_panel` frontend tool can open one, and so the viewer
+  // follows later revisions of the same path rather than a stale snapshot.
+  const { openFilePath, setOpenFilePath } = useWorkbenchUI();
+  const open = files.find((f) => f.path === openFilePath) ?? null;
+  const setOpen = (file: WorkspaceFile | null) => setOpenFilePath(file?.path ?? null);
 
   return (
     <>

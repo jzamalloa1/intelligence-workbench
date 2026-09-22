@@ -95,7 +95,10 @@ flowchart TD
     SUB1 -->|"summary only"| LEAD
     SUB2 -->|"summary only"| LEAD
 
-    LEAD -->|"execute (optional)"| SB
+    LEAD -->|"execute (optional)"| GATE{"interrupt_on\napproval gate"}
+    GATE -->|"approve / edit"| SB
+    GATE -->|"reject"| LEAD
+    LEAD -->|"render_chart"| CANVAS["Artifact Canvas"]
     LEAD -->|"write_file"| REP["/reports/*.md — deliverable"]
     LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
 
@@ -136,6 +139,42 @@ subgraph, so their tokens would otherwise surface at the root of the run and int
 lead's own streamed message when several run in parallel. Disabling streaming on subagent models
 only fixes this; the lead still streams normally. Full incident writeup:
 [docs/ARCHITECTURE.md §4d](docs/ARCHITECTURE.md).
+
+### Steering — approvals and frontend tools
+
+Two directions of control, both added in Milestone 6.
+
+**The agent pauses for you.** `interrupt_on={"execute": …}` in `agent.py` gates the one tool
+that runs arbitrary code. The round trip, verified against the installed packages rather than
+the docs:
+
+```
+agent calls execute
+  → HumanInTheLoopMiddleware raises a LangGraph interrupt carrying
+      {action_requests: [{name, args, description}], review_configs: [{allowed_decisions}]}
+  → @ag-ui/langgraph emits it as the `on_interrupt` custom event (JSON-stringified)
+  → useInterrupt renders <ApprovalCard> inline in the chat
+  → you click Approve / Edit / Reject
+  → resolve({decisions: [...]}) → command.resume
+  → interrupt(hitl_request)["decisions"] returns it; the run continues
+```
+
+`decisions` must contain **exactly one entry per action request, in order** — the middleware
+raises on a count mismatch. Decision shapes: `{type:"approve"}`,
+`{type:"reject", message?}`, `{type:"edit", edited_action:{name, args}}`.
+
+> **Use `useInterrupt`, not `useHumanInTheLoop`.** They sound interchangeable and are not:
+> `useHumanInTheLoop` registers a *frontend tool* whose handler happens to be a human, while
+> `interrupt_on` uses LangGraph's interrupt mechanism. The giveaway is in the types —
+> `INTERRUPT_EVENT_NAME` in `@copilotkit/react-core` is literally `"on_interrupt"`, the exact
+> event `@ag-ui/langgraph` dispatches. Note also that `interrupt` is `null` on this path
+> (it is the "legacy" custom-event flow), so the payload is read from `event.value`.
+
+**You let the agent move the UI.** `useFrontendTool({name: "focus_panel", …})` registers a tool
+that executes *in the browser*, not in the agent process, so the agent can switch the Sandbox
+panel to Charts after rendering one, or open a file it just wrote — instead of describing where
+to look. The panels read that state from `WorkbenchUIContext` rather than local state, which is
+the whole reason it was lifted out of them.
 
 ### Who sees what — the sandbox/frontend visibility boundary
 
@@ -198,14 +237,15 @@ handful of numbers — the same visibility rule, just paid for the expensive way
 | `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Cloud/local runner dispatch on the `x-runner` header |
 | `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity / Charts data from agent state and messages |
 | `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (charts) |
+| `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — parses the HITL request, emits `{decisions:[…]}` |
+| `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file), for the `focus_panel` frontend tool |
 
 ### Not wired yet
 
 No `skills/` directory exists — the Skills Rail in the table below has nothing to show until one
-is authored. No `schedules/`. No `interrupt_on` — nothing pauses for approval yet. Memory
-(`memory.py`) is active on the backend (the agent already reads and writes
-`/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there is no frontend
-Memory panel rendering it yet. All of this is tracked in [Roadmap](#roadmap).
+is authored. No `schedules/`. Memory (`memory.py`) is active on the backend (the agent already
+reads and writes `/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there
+is no frontend Memory panel rendering it yet. All of this is tracked in [Roadmap](#roadmap).
 
 ---
 
@@ -284,7 +324,7 @@ Open <http://localhost:3000>.
 - [x] **3** — Frontend shell talking to the agent end to end
 - [x] **4** — Live panels: Plan Board, Workspace, Activity Timeline
 - [x] **5** — Sandbox execution + charts + Artifact Canvas
-- [ ] **6** — Human-in-the-loop approvals, frontend tools
+- [x] **6** — Human-in-the-loop approvals, frontend tools
 - [ ] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
 - [ ] **9** — Design pass, screenshots, v0.1.0

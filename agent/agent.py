@@ -12,7 +12,7 @@ compile time.
 """
 
 from copilotkit import CopilotKitMiddleware
-from langchain.agents.middleware import TodoListMiddleware
+from langchain.agents.middleware import InterruptOnConfig, TodoListMiddleware
 from managed_deepagents import define_deep_agent
 
 from agent_core.models import build_model, describe
@@ -32,6 +32,24 @@ agent = define_deep_agent(
     # synthesizes and is the one that decides something deserves a chart.
     tools=[research, render_chart],
     subagents=build_subagents(),
+    # Human-in-the-loop. Only `execute` is gated: it is the one tool that runs
+    # arbitrary code, and gating a tool the agent calls constantly (research)
+    # would turn every run into a clickfest without buying any safety.
+    #
+    # This pauses the run via LangGraph's interrupt mechanism, which surfaces to
+    # the browser as an `on_interrupt` event carrying
+    # `{action_requests, review_configs}`; the frontend resumes it with
+    # `{"decisions": [...]}` — one decision per request, in order. See
+    # ApprovalCard.tsx, and README's "Steering" section for the round trip.
+    interrupt_on={
+        "execute": InterruptOnConfig(
+            allowed_decisions=["approve", "edit", "reject"],
+            description=(
+                "This command runs in the sandbox VM. Review it before it executes — "
+                "you can edit the command or reject it outright."
+            ),
+        )
+    },
     # Order is explicit and never inferred.
     #   1. CopilotKit first  — installs shared state and frontend tools before
     #      anything else inspects the request.

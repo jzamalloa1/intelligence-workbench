@@ -315,6 +315,31 @@ before trusting it: `web/scripts/verify-toggle.mjs` confirms the `/info` negotia
 with the right header on every toggle, at zero API cost; then a real end-to-end research +
 sandbox + chart run against the Local runner completed clean.
 
+**Milestone 6: `useInterrupt`, not `useHumanInTheLoop`.** CopilotKit v2 exports both, and for
+LangGraph-style approvals only one of them is right. `useHumanInTheLoop` registers a *frontend
+tool* whose handler happens to be a human — the agent calls a tool that is answered in the
+browser. `interrupt_on` is a different mechanism entirely: LangChain's
+`HumanInTheLoopMiddleware` raises a LangGraph **interrupt**, which `@ag-ui/langgraph` forwards
+as a custom event. The decisive evidence is in the installed types —
+`INTERRUPT_EVENT_NAME = "on_interrupt"` in `@copilotkit/react-core` is character-for-character
+the event `@ag-ui/langgraph` dispatches, and `useInterrupt`'s own docstring says it handles
+"the legacy custom-event flow (`on_interrupt`)". Two consequences worth knowing: on that legacy
+path the standard `interrupt` prop is **null**, so the payload must be read from `event.value`,
+and it arrives **JSON-stringified** (the adapter does
+`value: typeof e.value === "string" ? e.value : JSON.stringify(e.value)`), so the card parses
+defensively.
+
+The resume contract is unforgiving and worth stating once: `interrupt(hitl_request)["decisions"]`
+expects **exactly one decision per action request, in order**, and raises on a count mismatch —
+which is why `ApprovalCard` holds a decision per request and only resolves once all are made,
+rather than firing on the first click. Verified without spending any API credits by rendering
+the card against the real payload shape in a throwaway route and asserting the emitted payloads:
+`{"decisions":[{"type":"approve"}]}`,
+`{"decisions":[{"type":"reject","message":"…"}]}`, and
+`{"decisions":[{"type":"edit","edited_action":{"name":"execute","args":{"command":"…"}}}]}`.
+**Not verified:** the live round trip — that the run actually pauses and resumes — which needs a
+real agent run.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

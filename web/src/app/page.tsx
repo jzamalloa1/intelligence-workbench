@@ -1,13 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   CopilotChat,
   useAgent,
   UseAgentUpdate,
+  useFrontendTool,
+  useInterrupt,
   useRenderTool,
 } from "@copilotkit/react-core/v2";
+import { z } from "zod";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { ApprovalCard, parseHITLRequest } from "@/components/ApprovalCard";
 import { Panel } from "@/components/Panel";
 import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
@@ -16,8 +20,30 @@ import { Workspace } from "@/components/Workspace";
 import { deriveFromMessages, readTodos } from "@/lib/workbench";
 import { INSPECTOR_ENABLED } from "@/lib/config";
 import { useRunnerMode } from "@/lib/runner-mode";
+import { WorkbenchUIContext, useWorkbenchUI, type SandboxTab } from "@/lib/workbench-ui";
 
+/**
+ * Holds the UI state the agent is allowed to drive, above everything that
+ * reads it — the panels consume it through context, and the `focus_panel`
+ * frontend tool writes to it.
+ */
 export default function Page() {
+  const [sandboxTab, setSandboxTab] = useState<SandboxTab>("console");
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+
+  const ui = useMemo(
+    () => ({ sandboxTab, setSandboxTab, openFilePath, setOpenFilePath }),
+    [sandboxTab, openFilePath],
+  );
+
+  return (
+    <WorkbenchUIContext.Provider value={ui}>
+      <Workbench />
+    </WorkbenchUIContext.Provider>
+  );
+}
+
+function Workbench() {
   // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
   // bare row per tool call that says nothing about what the agent did; this
   // renders the tool, its target, and an expandable result instead.
@@ -42,6 +68,9 @@ export default function Page() {
     () => deriveFromMessages(messages),
     [messages],
   );
+
+  useApprovals();
+  useFocusPanelTool();
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -68,6 +97,69 @@ export default function Page() {
       </main>
     </div>
   );
+}
+
+/**
+ * Renders the approval card for `interrupt_on` pauses, inline in the chat.
+ *
+ * `useInterrupt` — not `useHumanInTheLoop`. The two look interchangeable and
+ * are not: `useHumanInTheLoop` registers a *frontend tool* whose handler is the
+ * human, while `interrupt_on` uses LangGraph's interrupt mechanism, which
+ * `@ag-ui/langgraph` surfaces as the `on_interrupt` custom event —
+ * `INTERRUPT_EVENT_NAME` in @copilotkit/react-core is literally `"on_interrupt"`.
+ * `useInterrupt` is the hook that listens for it.
+ */
+function useApprovals() {
+  useInterrupt({
+    // Only handle payloads we recognise, so a future interrupt of another
+    // shape falls through to whatever else is registered rather than
+    // rendering a broken card.
+    enabled: (event) => parseHITLRequest(event?.value) !== null,
+    render: ({ event, resolve }) => {
+      const request = parseHITLRequest(event?.value);
+      if (!request) return <></>;
+      return (
+        <ApprovalCard request={request} onDecide={(decisions) => void resolve({ decisions })} />
+      );
+    },
+  });
+}
+
+/**
+ * A frontend tool: it runs in the browser, not in the agent process, so the
+ * agent can move the interface as part of answering rather than describing
+ * where to look ("the chart is in the canvas" → it just opens the canvas).
+ */
+function useFocusPanelTool() {
+  const { setSandboxTab, setOpenFilePath } = useWorkbenchUI();
+
+  useFrontendTool({
+    name: "focus_panel",
+    description:
+      "Bring part of the workbench UI to the user's attention: switch the Sandbox " +
+      "panel between its Console and Charts tabs, and/or open a file you have " +
+      "written in the Workspace viewer. Call this when you have just produced " +
+      "something the user should look at.",
+    parameters: z.object({
+      panel: z
+        .enum(["console", "charts"])
+        .optional()
+        .describe("Which Sandbox tab to show. Use 'charts' right after render_chart."),
+      file_path: z
+        .string()
+        .optional()
+        .describe("Absolute path of a file you wrote, e.g. /reports/summary.md, to open."),
+    }),
+    handler: async ({ panel, file_path }) => {
+      if (panel) setSandboxTab(panel);
+      if (file_path) setOpenFilePath(file_path);
+      // The return value goes back to the model as the tool result.
+      const did = [panel && `showed the ${panel} tab`, file_path && `opened ${file_path}`]
+        .filter(Boolean)
+        .join(" and ");
+      return did ? `Done — ${did}.` : "Nothing to focus; pass panel or file_path.";
+    },
+  });
 }
 
 function Header({ running }: { running: boolean }) {
