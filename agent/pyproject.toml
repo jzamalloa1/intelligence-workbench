@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Intelligence Workbench — Managed Deep Agent backend"
 requires-python = ">=3.14"
 dependencies = [
-    "managed-deepagents>=0.7.2",
+    "managed-deepagents>=0.7.3",
     # Bridges the agent to CopilotKit: shared state, frontend tools, agent context.
     "copilotkit>=0.1.96",
     # Providers. Both are installed so LLM_PROVIDER can flip without a re-sync.

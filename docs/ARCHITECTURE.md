@@ -401,14 +401,14 @@ Things that cost time and are not obvious from the docs:
   exactly; we relax both.
 - **The docs run ahead of the CLI.** Verify flags against `mda --help` before trusting them.
 
-**Version audit (re-checked 2026-09-11)**, against PyPI/npm rather than assumed — both
+**Version audit (re-checked 2026-09-21)**, against PyPI/npm rather than assumed — both
 ecosystems ship weekly, so a version pinned a few weeks ago is worth re-verifying rather than
 trusting. The MDA row below is the proof: it went from "current" to three releases behind in
 **nine days**.
 
 | Package | Installed | Latest | Note |
 |---|---|---|---|
-| `managed-deepagents` | 0.7.2 | 0.7.2 | bumped from 0.6.1 on 2026-09-11 |
+| `managed-deepagents` | 0.7.3 | 0.7.3 | 0.6.1 → 0.7.2 on 09-11, → 0.7.3 on 09-21 |
 | `copilotkit` (Python) | 0.1.96 | 0.1.96 | current |
 | `langchain` | 1.3.18 | 1.3.18 | current |
 | `langchain-anthropic` | 1.7.0 | 1.7.0 | current |
@@ -423,6 +423,15 @@ still depends on exactly `0.0.42` (verified by reading it, not inferred), the sa
 caused the duplicate-`@ag-ui/client` crash in §4d when tried at 0.0.43. Bumping our pin without
 CopilotKit bumping theirs would reintroduce that exact conflict. `next` had no such
 constraint, so it was bumped to 16.3.4.
+
+**0.7.3 (2026-09-21).** Patch bump, nothing breaking. The one line that touches us:
+*"Remove MDA's default recursion limit"* — the managed runtime no longer imposes its own
+graph recursion ceiling, so `ModelCallLimitMiddleware(run_limit=60)` in `middleware/guards.py`
+is now the **only** ceiling on a run. That is the arrangement we want (an explicit, cost-shaped
+limit rather than an opaque platform default), but it does mean that guard is now load-bearing
+— don't remove it. The rest is CLI/deploy ergonomics that lands in Milestone 8. Verified
+without spending any API credits: `import agent` clean, `mda dev` compiles and registers
+`workbench`.
 
 **On the 0.6.1 → 0.7.2 bump.** `uv tool install` pins at install time and never
 self-upgrades, and `uv.lock` governs the project venv regardless of a `>=` constraint — so
