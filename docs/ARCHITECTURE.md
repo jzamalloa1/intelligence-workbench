@@ -364,6 +364,47 @@ throws away a finished run's output before the browser sees it. Three changes fo
    single `@ag-ui/client@0.0.59` without it. Verified with tsc, `next build`, and
    `verify-toggle.mjs`; **not** verified against a live long Cloud run.
 
+**The nameless tool call — UI froze at the plan step while the agent kept working
+(2026-09-26).** Symptom: send a query, the first sentence and a couple of `research` cards
+appear, then nothing — no plan, no subagents, header back to "Idle" — while `mda dev` keeps
+making model calls and logs `Background run succeeded` minutes later. Not a network drop and
+not event volume; the browser simply stopped consuming the stream.
+
+Diagnosed at zero API cost. The Local runner keeps every event per thread, so
+`POST /api/copilotkit/agent/workbench/connect {threadId}` replays exactly what the browser was
+sent. That recording was then (a) served back to headless Chrome via Playwright
+`route.fulfill`, which reproduced the freeze, and (b) its `RAW` events — which carry the
+original LangGraph events — fed through the adapter's `handleSingleEvent` offline, stock vs
+patched.
+
+Cause, in `@ag-ui/langgraph` 0.0.43's `on_chat_model_stream` handler: when a text message is
+open and a chunk arrives with no text, it emits `TEXT_MESSAGE_END` and **`break`s**, discarding
+that chunk — which, when the model writes a sentence and then calls a tool in the same reply,
+is the chunk carrying the tool call's name and id. The later args chunks are dropped too (no
+open tool call). The adapter then emits a late start from `on_tool_end`, naming it from the
+ToolMessage — and tools that return a `Command` (`write_todos`, `task`) build that ToolMessage
+without a `name`. Result: `TOOL_CALL_START` with `toolCallName: null`, which the client rejects,
+ending the run on screen. For ordinary tools (`research`) the fallback *does* recover the name,
+which is why the bug only bites on the plan/delegation step.
+
+Not caused by the same-day upgrade: the adapter is unchanged (0.0.43 before and after) and
+`langchain-anthropic`'s streaming code is identical between 1.7.0 and 1.7.4. It is latent, and
+fires whenever the lead narrates before `write_todos`/`task`.
+
+Fix: `web/src/lib/workbench-agent.ts`, a `LangGraphAgent` subclass used by `route.ts`. It closes
+the open text message *before* the adapter sees a named tool-call chunk, and fills a missing
+ToolMessage name from the `on_tool_end` event. Offline replay of the recorded run: stock emits
+`write_todos` with a null name and 1 (late) args chunk; patched emits it named, streamed live in
+78 chunks, zero nameless starts. And replaying the recording into Chrome with only that one name
+corrected renders the whole run — plan, three `task`s, 47 `research` cards, the Workspace file.
+`@ag-ui/client` became a direct dependency (for `EventType`), pinned to the same 0.0.59
+CopilotKit uses. Re-check the subclass against the adapter source on every `@ag-ui/langgraph`
+bump, and delete it once upstream fixes both paths.
+
+Seen in the same recording, not the cause, left alone for now: one run relayed ~53 MB — 733
+full `STATE_SNAPSHOT`s (~40 KB each, the whole message list every time) plus ~2,600 `RAW`
+events. The browser handled it, but it is worth trimming if long runs start to feel sluggish.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

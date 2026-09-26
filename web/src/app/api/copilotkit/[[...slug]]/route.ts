@@ -17,13 +17,13 @@
  *     which loses thread history on server restart.
  */
 
-import { LangGraphAgent } from "@ag-ui/langgraph";
 import {
   CopilotKitIntelligence,
   CopilotRuntime,
   InMemoryAgentRunner,
   createCopilotRuntimeHandler,
 } from "@copilotkit/runtime/v2";
+import { WorkbenchLangGraphAgent } from "@/lib/workbench-agent";
 
 /** Must match `define_deep_agent(name=...)` — MDA registers it as the graph id. */
 export const AGENT_ID = "workbench";
@@ -31,8 +31,13 @@ export const AGENT_ID = "workbench";
 const deploymentUrl = process.env.LANGGRAPH_URL ?? "http://127.0.0.1:2024";
 const intelligenceApiKey = process.env.INTELLIGENCE_API_KEY;
 
+/**
+ * A `LangGraphAgent` subclass, not the stock one: it patches two
+ * @ag-ui/langgraph stream-translation bugs that froze the UI whenever the model
+ * wrote text and then called a tool in the same turn. See workbench-agent.ts.
+ */
 function buildAgent() {
-  return new LangGraphAgent({
+  return new WorkbenchLangGraphAgent({
     deploymentUrl,
     graphId: AGENT_ID,
     // Only needed once the agent is deployed (`mda deploy`), where identity.py's

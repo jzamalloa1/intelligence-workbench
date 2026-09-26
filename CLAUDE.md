@@ -160,8 +160,12 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   `InMemoryAgentRunner` (the documented `SqliteAgentRunner` does not exist in 1.69.3). Features
   requiring Intelligence (threads drawer, Inspector) must degrade gracefully, not crash.
 - **Import `LangGraphAgent` from `@ag-ui/langgraph`**, not `@copilotkit/runtime/langgraph`
-  (deprecated v1). Keep `@ag-ui/langgraph` pinned to the exact version `@copilotkit/runtime`
-  depends on — a caret range breaks every route. See ARCHITECTURE §4b.
+  (deprecated v1). Keep `@ag-ui/langgraph` **and `@ag-ui/client`** pinned to the exact versions
+  `@copilotkit/runtime` depends on — a caret range breaks every route. See ARCHITECTURE §4b.
+- **`route.ts` uses `WorkbenchLangGraphAgent`** (`src/lib/workbench-agent.ts`), not the stock
+  class. It patches an adapter bug that drops a tool call following text and emits
+  `write_todos`/`task` with a null name — which freezes the UI mid-run. Re-check it against the
+  adapter source on every `@ag-ui/langgraph` bump (ARCHITECTURE §4d, "the nameless tool call").
 - Tool-call noise is filtered **on the frontend** in `useRenderToolCall`. The
   `copilotkit_customize_config(emit_tool_calls=[...])` approach from CopilotKit's showcase is
   FastAPI-path-specific and does not apply here.

@@ -104,7 +104,7 @@ flowchart TD
     LEAD -->|"write_file"| REP["/reports/*.md — deliverable"]
     LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
 
-    ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph"]
+    ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph\n(patched: workbench-agent.ts)"]
     AGUI --> DERIVE["workbench.ts — pure derivation\ntodos ← state, files/activity ← tool-call messages"]
     DERIVE --> PANELS["Plan Board · Workspace · Activity Timeline"]
 ```
