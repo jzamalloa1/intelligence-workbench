@@ -63,11 +63,66 @@ export function parseHITLRequest(value: unknown): HITLRequest | null {
 }
 
 /** The one argument worth showing large, per tool. Everything else is detail. */
+const PRIMARY_ARG: Record<string, string> = {
+  execute: "command",
+  research: "query",
+  write_file: "file_path",
+};
+
 function primaryArg(name: string, args: Record<string, unknown>): string | undefined {
-  const key = { execute: "command", research: "query", write_file: "file_path" }[name];
+  const key = PRIMARY_ARG[name];
   const v = key ? args[key] : undefined;
   return typeof v === "string" ? v : undefined;
 }
+
+/** Fallback headline when a request carries no plain-language description. */
+const FRIENDLY_NAME: Record<string, string> = {
+  execute: "Run a command in the sandbox.",
+  write_file: "Save a file in the workspace.",
+  research: "Search the web.",
+};
+
+interface Explained {
+  headline: string;
+  why?: string;
+  details: { verb: string; target: string }[];
+  warnings: string[];
+  notes: string[];
+}
+
+/**
+ * Reads the description `agent_core/approvals.py` generates — a headline, then
+ * `Why:`, `- detail` and `! warning` lines. Anything else (a static
+ * description, another tool's) is shown as plain notes under a generic headline.
+ */
+function explain(action: ActionRequest): Explained {
+  const lines = (action.description ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const structured = lines.some((l) => /^(Why: |- |! )/.test(l));
+  const out: Explained = {
+    headline: structured && lines[0] ? lines[0] : FRIENDLY_NAME[action.name] ?? `Use the ${action.name} tool.`,
+    details: [],
+    warnings: [],
+    notes: [],
+  };
+  for (const line of structured ? lines.slice(1) : lines) {
+    if (line.startsWith("Why: ")) out.why = line.slice(5);
+    else if (line.startsWith("- ")) {
+      const [verb, ...rest] = line.slice(2).split(" ");
+      out.details.push({ verb, target: rest.join(" ") });
+    } else if (line.startsWith("! ")) out.warnings.push(line.slice(2));
+    else out.notes.push(line);
+  }
+  return out;
+}
+
+const DECIDED_LABEL: Record<Decision["type"], string> = {
+  approve: "Approved — it will run.",
+  edit: "Approved with your changes.",
+  reject: "Not run.",
+};
 
 export function ApprovalCard({
   request,
@@ -90,6 +145,7 @@ export function ApprovalCard({
     setDecisions(next);
     setEditing(null);
     setRejecting(null);
+    setReason("");
     // Resolve as soon as every request has a decision — the middleware requires
     // exactly one per request, so a partial response is never valid.
     if (Object.keys(next).length === total && !submitted) {
@@ -99,9 +155,13 @@ export function ApprovalCard({
   }
 
   if (submitted) {
+    const allRejected = Object.values(decisions).every((d) => d.type === "reject");
     return (
-      <div className="my-2 rounded-xl border border-wb-border bg-wb-panel-alt px-3.5 py-2.5 text-[12px] text-wb-muted">
-        Decision sent — resuming the run.
+      <div className="my-2 flex items-center gap-2 rounded-xl border border-wb-border bg-wb-panel-alt px-3.5 py-2.5 text-[12px] text-wb-muted">
+        <span aria-hidden className={`size-1.5 rounded-full ${allRejected ? "bg-wb-faint" : "bg-wb-good"}`} />
+        {allRejected
+          ? "Got it — the assistant will continue without running it."
+          : "Thanks — the assistant is continuing."}
       </div>
     );
   }
@@ -111,16 +171,21 @@ export function ApprovalCard({
       className="my-2 overflow-hidden rounded-xl border border-wb-warn/40 bg-wb-panel"
       style={{ boxShadow: "var(--wb-shadow)" }}
     >
-      <header className="flex items-center gap-2 border-b border-wb-border bg-wb-panel-alt px-3.5 py-2">
-        <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-wb-warn" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-wb-muted">
-          Approval required
-        </h3>
-        {total > 1 ? (
-          <span className="ml-auto text-[10.5px] text-wb-faint">
-            {Object.keys(decisions).length}/{total} decided
-          </span>
-        ) : null}
+      <header className="border-b border-wb-border bg-wb-panel-alt px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-wb-warn" />
+          <h3 className="text-[12.5px] font-semibold text-wb-text">Your OK is needed</h3>
+          {total > 1 ? (
+            <span className="ml-auto text-[10.5px] tabular-nums text-wb-faint">
+              {Object.keys(decisions).length} of {total} decided
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-wb-muted">
+          The assistant wants to run something in its sandbox — a private, temporary computer
+          used only for this conversation. It can’t reach your own computer or files. Nothing
+          runs until you choose.
+        </p>
       </header>
 
       <div className="flex flex-col divide-y divide-wb-border">
@@ -129,61 +194,88 @@ export function ApprovalCard({
           const allowed = config?.allowed_decisions ?? ["approve", "reject"];
           const decided = decisions[i];
           const primary = primaryArg(action.name, action.args);
+          const info = explain(action);
 
           return (
-            <div key={`${action.name}-${i}`} className="px-3.5 py-3">
-              <div className="mb-2 flex items-baseline gap-2">
-                <code className="text-[11px] font-medium text-wb-warn">{action.name}</code>
-                {decided ? (
-                  <span className="text-[10.5px] text-wb-faint">{decided.type}ed</span>
+            <div key={`${action.name}-${i}`} className="flex flex-col gap-2.5 px-4 py-3.5">
+              <div>
+                <p className="text-[13.5px] font-medium leading-snug text-wb-text">{info.headline}</p>
+                {info.why ? (
+                  <p className="mt-1 text-[12px] leading-relaxed text-wb-muted">
+                    <span className="text-wb-faint">In the assistant’s words: </span>“{info.why}”
+                  </p>
                 ) : null}
+                {info.notes.map((note) => (
+                  <p key={note} className="mt-1 text-[12px] leading-relaxed text-wb-muted">
+                    {note}
+                  </p>
+                ))}
               </div>
 
-              {action.description ? (
-                <p className="mb-2 text-[12px] leading-relaxed text-wb-muted">
-                  {action.description}
-                </p>
+              {info.details.length > 0 ? (
+                <ul className="flex flex-col gap-1">
+                  {info.details.map((d) => (
+                    <li key={`${d.verb}-${d.target}`} className="flex items-baseline gap-2 text-[11.5px]">
+                      <span className="w-12 shrink-0 text-wb-faint">{d.verb}</span>
+                      <code className="min-w-0 truncate rounded bg-wb-panel-alt px-1.5 py-0.5 font-mono text-[11px] text-wb-text">
+                        {d.target}
+                      </code>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
 
-              {/* While editing, the textarea below already shows the command —
-                  repeating it read-only above just doubles it. */}
-              {editing === i ? null : primary ? (
-                <pre className="mb-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-wb-border bg-wb-panel-alt p-2.5 font-mono text-[11.5px] leading-relaxed text-wb-text">
-                  {primary}
-                </pre>
-              ) : (
-                <pre className="mb-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-wb-border bg-wb-panel-alt p-2.5 font-mono text-[11px] text-wb-muted">
-                  {JSON.stringify(action.args, null, 2)}
-                </pre>
-              )}
+              {info.warnings.length > 0 ? (
+                <ul className="flex flex-wrap gap-1.5">
+                  {info.warnings.map((w) => (
+                    <li
+                      key={w}
+                      className="flex items-center gap-1.5 rounded-full border border-wb-warn/40 bg-wb-warn/10 px-2.5 py-0.5 text-[11px] font-medium text-wb-text"
+                    >
+                      <WarnIcon /> {w}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {primary && editing !== i ? (
+                <details className="group rounded-lg border border-wb-border bg-wb-panel-alt">
+                  <summary className="cursor-pointer select-none list-none px-2.5 py-1.5 text-[11px] text-wb-muted transition-colors hover:text-wb-text">
+                    <span className="inline-block transition-transform group-open:rotate-90">›</span>{" "}
+                    Show the exact {action.name === "execute" ? "command" : "details"}
+                  </summary>
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-wb-border p-2.5 font-mono text-[11px] leading-relaxed text-wb-text">
+                    {primary}
+                  </pre>
+                </details>
+              ) : null}
 
               {editing === i ? (
                 <div className="flex flex-col gap-2">
+                  <label className="text-[11px] text-wb-muted" htmlFor={`edit-${i}`}>
+                    Change the command before it runs (for people comfortable with code):
+                  </label>
                   <textarea
+                    id={`edit-${i}`}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    rows={4}
-                    aria-label="Edited command"
+                    rows={5}
                     className="w-full rounded-lg border border-wb-border bg-wb-panel-alt p-2.5 font-mono text-[11.5px] text-wb-text outline-none focus:border-wb-accent"
                   />
                   <div className="flex gap-2">
                     <Action
                       tone="accent"
-                      onClick={() => {
-                        const key =
-                          { execute: "command", research: "query", write_file: "file_path" }[
-                            action.name
-                          ] ?? "command";
+                      onClick={() =>
                         decide(i, {
                           type: "edit",
                           edited_action: {
                             name: action.name,
-                            args: { ...action.args, [key]: draft },
+                            args: { ...action.args, [PRIMARY_ARG[action.name] ?? "command"]: draft },
                           },
-                        });
-                      }}
+                        })
+                      }
                     >
-                      Run edited
+                      Run my version
                     </Action>
                     <Action onClick={() => setEditing(null)}>Cancel</Action>
                   </div>
@@ -193,8 +285,8 @@ export function ApprovalCard({
                   <input
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="Why? (optional — the agent sees this)"
-                    aria-label="Rejection reason"
+                    placeholder="Tell the assistant why, or what to do instead (optional)"
+                    aria-label="Reason for not running it"
                     className="w-full rounded-lg border border-wb-border bg-wb-panel-alt px-2.5 py-1.5 text-[12px] text-wb-text outline-none focus:border-wb-accent"
                   />
                   <div className="flex gap-2">
@@ -207,16 +299,18 @@ export function ApprovalCard({
                         })
                       }
                     >
-                      Confirm reject
+                      Don’t run it
                     </Action>
-                    <Action onClick={() => setRejecting(null)}>Cancel</Action>
+                    <Action onClick={() => setRejecting(null)}>Back</Action>
                   </div>
                 </div>
-              ) : decided ? null : (
+              ) : decided ? (
+                <p className="text-[11.5px] text-wb-muted">{DECIDED_LABEL[decided.type]}</p>
+              ) : (
                 <div className="flex flex-wrap gap-2">
                   {allowed.includes("approve") ? (
                     <Action tone="accent" onClick={() => decide(i, { type: "approve" })}>
-                      Approve
+                      Run it
                     </Action>
                   ) : null}
                   {allowed.includes("edit") && primary ? (
@@ -226,12 +320,12 @@ export function ApprovalCard({
                         setEditing(i);
                       }}
                     >
-                      Edit
+                      Change it
                     </Action>
                   ) : null}
                   {allowed.includes("reject") ? (
                     <Action tone="warn" onClick={() => setRejecting(i)}>
-                      Reject
+                      Don’t run
                     </Action>
                   ) : null}
                 </div>
@@ -241,6 +335,15 @@ export function ApprovalCard({
         })}
       </div>
     </div>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-3 text-wb-warn" aria-hidden>
+      <path d="M8 2 14.5 13.5h-13z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 6.5v3.2M8 11.6v.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

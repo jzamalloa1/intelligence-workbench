@@ -15,6 +15,7 @@ from copilotkit import CopilotKitMiddleware
 from langchain.agents.middleware import InterruptOnConfig, TodoListMiddleware
 from managed_deepagents import define_deep_agent
 
+from agent_core.approvals import describe_execute
 from agent_core.models import build_model, describe
 from agent_core.subagents import build_subagents
 from middleware.errors import FriendlyErrorMiddleware
@@ -44,10 +45,9 @@ agent = define_deep_agent(
     interrupt_on={
         "execute": InterruptOnConfig(
             allowed_decisions=["approve", "edit", "reject"],
-            description=(
-                "This command runs in the sandbox VM. Review it before it executes — "
-                "you can edit the command or reject it outright."
-            ),
+            # Generated per call, in plain language, from the agent's stated
+            # intent plus a reading of the command — see agent_core/approvals.py.
+            description=describe_execute,
         )
     },
     # Order is explicit and never inferred.

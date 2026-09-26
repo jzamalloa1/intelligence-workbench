@@ -157,12 +157,23 @@ the docs:
 agent calls execute
   → HumanInTheLoopMiddleware raises a LangGraph interrupt carrying
       {action_requests: [{name, args, description}], review_configs: [{allowed_decisions}]}
+      (description is generated per call by agent_core/approvals.describe_execute)
   → @ag-ui/langgraph emits it as the `on_interrupt` custom event (JSON-stringified)
   → useInterrupt renders <ApprovalCard> inline in the chat
-  → you click Approve / Edit / Reject
+  → you click Run it / Change it / Don't run
   → resolve({decisions: [...]}) → command.resume
   → interrupt(hitl_request)["decisions"] returns it; the run continues
 ```
+
+**Written for people who don't read shell.** The approval text is not a fixed string: `description`
+in `interrupt_on` is a function (`agent_core/approvals.py`) that builds a plain-language summary
+per call, with no extra model call — a headline ("Run a short Python program."), the agent's own
+stated reason taken from the message that carries the tool call, which workspace files it uses,
+saves or deletes, and warnings for internet access, deletion or `sudo`. The card renders that,
+explains what the sandbox is, and keeps the exact command behind "Show the exact command". It is a
+summary, not a security boundary — the sandbox is what contains the command. Verified with
+`web/scripts/verify-approval.mjs` (synthetic interrupt, zero API cost), which also checks the
+resume payload for all three decisions.
 
 `decisions` must contain **exactly one entry per action request, in order** — the middleware
 raises on a count mismatch. Decision shapes: `{type:"approve"}`,
@@ -245,7 +256,8 @@ handful of numbers — the same visibility rule, just paid for the expensive way
 | `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (chart gallery) |
 | `web/src/components/charts/` | One chart renderer (`ChartPlot`: unit panels, wrapped labels) shared by the gallery, the full-screen view (`ChartDialog`: all charts, table, PNG/SVG/CSV export) and charts embedded in reports |
 | `web/src/lib/downloads.ts` | Client-side downloads — report files, chart PNG/SVG/CSV; "Save as PDF" is the browser's print, via a print-only copy of the report |
-| `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — parses the HITL request, emits `{decisions:[…]}` |
+| `agent_core/approvals.py` | Plain-language approval text for `execute` — the `interrupt_on` description function |
+| `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — renders the plain-language description, emits `{decisions:[…]}` |
 | `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file), for the `focus_panel` frontend tool |
 
 ### Not wired yet
