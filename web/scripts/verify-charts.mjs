@@ -105,6 +105,8 @@ await page.route("**/api/copilotkit/agent/workbench/run", async (route) => {
   });
 });
 
+// The app sits behind demo sign-in; the cookie is shared by the page's context.
+await page.request.post(`${BASE}/api/session`, { data: { userId: "alex" } });
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.locator("textarea").first().fill("synthetic chart check");
 await page.locator("textarea").first().press("Enter");

@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 scripts/.out/
+
+# Local per-user conversation history (lib/server/history-store.ts) — SQLite + its WAL files.
+.data/

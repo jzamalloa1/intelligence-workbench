@@ -22,7 +22,7 @@ Useful variants:
 ```bash
 mda dev . --no-browser                   # don't auto-open LangSmith Studio
 mda dev . --port 2025                    # then update LANGGRAPH_URL to match
-mda build .                              # compile only, no server
+mda build . --out /tmp/mda-check         # compile check — NEVER plain `mda build .` while `mda dev` runs
 mda deploy .                             # requires public-beta workspace access
 mda logs .                               # tail a deployed agent
 ```
@@ -44,6 +44,11 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
   constraint-dependencies`) — otherwise a plain upgrade lands on a pydantic *beta* via
   copilotkit's direct `pydantic-core` requirement. **Lift it once pydantic 2.14.0 final ships.**
   Do not replace it with `prerelease = "disallow"`: that breaks `mda dev` (ARCHITECTURE §6).
+- **`mda build .` (and every `mda dev` start) empties `agent/.mda/build/`** — which is also where
+  `mda dev` keeps its thread persistence (`.langgraph_api/`). Plain `mda build .` under a running
+  server wipes every local conversation on the agent side. For compile checks use
+  `mda build . --out <scratch dir>`. Durable local history lives in the web app's SQLite store
+  instead (ARCHITECTURE §4d).
 - **Upgrading MDA touches two surfaces**: `uv tool upgrade managed-deepagents` (the `mda` CLI)
   *and* the `agent/pyproject.toml` pin + `uv lock --upgrade-package managed-deepagents`. Then
   `mda build .` — the CLI validates things the Python package still accepts.
@@ -166,6 +171,13 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   class. It patches an adapter bug that drops a tool call following text and emits
   `write_todos`/`task` with a null name — which freezes the UI mid-run. Re-check it against the
   adapter source on every `@ag-ui/langgraph` bump (ARCHITECTURE §4d, "the nameless tool call").
+- **Sign-in is a demo** (`lib/users.ts`, httpOnly `wb_user` cookie). `route.ts` stamps
+  `x-workbench-user` from the cookie — overwriting the browser's — and refuses another user's
+  thread with 404. Never read the user from a request body or a client-sent header.
+- **History lives in `web/.data/workbench.sqlite`** (gitignored), written by `HistoryRunner`.
+  Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
+- **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
+  `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs` — run them after UI changes.
 - Tool-call noise is filtered **on the frontend** in `useRenderToolCall`. The
   `copilotkit_customize_config(emit_tool_calls=[...])` approach from CopilotKit's showcase is
   FastAPI-path-specific and does not apply here.

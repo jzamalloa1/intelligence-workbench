@@ -1,10 +1,11 @@
 import { EventType } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
+import { USER_HEADER } from "./users";
 
 /**
- * `LangGraphAgent` with two stream-translation bugs in @ag-ui/langgraph 0.0.43
- * patched. Both surfaced together and froze the UI mid-run while the agent kept
- * working server-side (docs/ARCHITECTURE.md §4d, "the nameless tool call").
+ * `LangGraphAgent` that records thread ownership, with two stream-translation
+ * bugs in @ag-ui/langgraph 0.0.43 patched. The bugs surfaced together and froze
+ * the UI mid-run while the agent kept working server-side (docs/ARCHITECTURE.md §4d, "the nameless tool call").
  *
  * 1. **A tool call that directly follows text is dropped.** In the adapter's
  *    `on_chat_model_stream` branch, a chunk with no text while a text message is
@@ -26,6 +27,21 @@ import { LangGraphAgent } from "@ag-ui/langgraph";
  * drop this subclass once upstream handles them.
  */
 export class WorkbenchLangGraphAgent extends LangGraphAgent {
+  /**
+   * Stamps the owner on every thread this agent creates on the agent server,
+   * from the `x-workbench-user` header route.ts sets. The web app's history
+   * store is what enforces ownership locally; this makes the same fact visible
+   * on the agent side (LangSmith traces, `/threads/search`), where a deployed
+   * agent's durable threads live.
+   */
+  override createThread(payload?: Parameters<LangGraphAgent["createThread"]>[0]) {
+    const userId = Object.entries(this.headers ?? {}).find(([k]) => k.toLowerCase() === USER_HEADER)?.[1];
+    return super.createThread({
+      ...payload,
+      metadata: { ...(payload?.metadata ?? {}), ...(userId ? { user_id: userId } : {}) },
+    });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches the base signature
   override handleSingleEvent(event: any): void {
     if (event && !Array.isArray(event)) {

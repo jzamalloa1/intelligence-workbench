@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AgentProvider } from "@/components/AgentProvider";
+import { SessionGate } from "@/components/SessionGate";
 
 export const metadata: Metadata = {
   title: "Intelligence Workbench",
@@ -21,9 +21,9 @@ export default function RootLayout({
           back to the local runner regardless, so this is purely so the toggle
           doesn't claim a mode that isn't actually configured.
         */}
-        <AgentProvider intelligenceAvailable={Boolean(process.env.INTELLIGENCE_API_KEY)}>
+        <SessionGate intelligenceAvailable={Boolean(process.env.INTELLIGENCE_API_KEY)}>
           {children}
-        </AgentProvider>
+        </SessionGate>
       </body>
     </html>
   );

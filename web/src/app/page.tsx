@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CopilotChat,
   useAgent,
@@ -27,6 +27,9 @@ import {
   type SandboxTab,
 } from "@/lib/workbench-ui";
 import { ChartDialog } from "@/components/charts/ChartDialog";
+import { HistorySidebar } from "@/components/HistorySidebar";
+import { Avatar } from "@/components/SessionGate";
+import { useSession } from "@/lib/session-client";
 
 /**
  * Holds the UI state the agent is allowed to drive, above everything that
@@ -34,6 +37,13 @@ import { ChartDialog } from "@/components/charts/ChartDialog";
  * frontend tool writes to it.
  */
 export default function Page() {
+  // Keyed by conversation: switching threads starts every panel's UI state
+  // (open file, expanded chart, tab) fresh rather than carrying it across.
+  const { threadId } = useSession();
+  return <ConversationView key={threadId} />;
+}
+
+function ConversationView() {
   const [sandboxTab, setSandboxTab] = useState<SandboxTab>("console");
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
@@ -84,44 +94,76 @@ function Workbench() {
   );
 
   const { sandboxTab } = useWorkbenchUI();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   useApprovals();
   useFocusPanelTool(charts);
+  useHistoryRefresh(running);
 
   return (
     <ChartLibraryContext.Provider value={charts}>
-    <div className="flex h-dvh flex-col overflow-hidden">
-      <Header running={running} />
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <Header
+          running={running}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        />
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px_320px]">
-        <Panel title="Conversation" className="min-h-0">
-          <div className="h-full">
-            <CopilotChat agentId="workbench" />
-          </div>
-        </Panel>
-
-        {/* Plan + activity: the agent's reasoning made visible. */}
-        <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 lg:grid">
-          <PlanBoard todos={todos} />
-          <ActivityTimeline activity={activity} />
-        </div>
-
-        {/* Workspace + Sandbox get their own column once there's room for it.
-            The split follows what's on show: charts get the larger share. */}
-        <div
-          className={`hidden min-h-0 gap-3 transition-[grid-template-rows] duration-300 ease-out xl:grid ${
-            sandboxTab === "charts" && charts.length > 0
-              ? "grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)]"
-              : "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
+        <main
+          className={`grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 ${
+            sidebarOpen
+              ? "lg:grid-cols-[232px_minmax(0,1fr)_380px] xl:grid-cols-[232px_minmax(0,1fr)_400px_320px]"
+              : "lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px_320px]"
           }`}
         >
-          <Workspace files={files} />
-          <SandboxPanel activity={activity} charts={charts} />
-        </div>
-      </main>
-      <ChartDialog />
-    </div>
+          {sidebarOpen ? (
+            <div className="hidden min-h-0 lg:grid">
+              <HistorySidebar />
+            </div>
+          ) : null}
+
+          <Panel title="Conversation" className="min-h-0">
+            <div className="h-full">
+              <CopilotChat agentId="workbench" />
+            </div>
+          </Panel>
+
+          {/* Plan + activity: the agent's reasoning made visible. */}
+          <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 lg:grid">
+            <PlanBoard todos={todos} />
+            <ActivityTimeline activity={activity} />
+          </div>
+
+          {/* Workspace + Sandbox get their own column once there's room for it.
+              The split follows what's on show: charts get the larger share. */}
+          <div
+            className={`hidden min-h-0 gap-3 transition-[grid-template-rows] duration-300 ease-out xl:grid ${
+              sandboxTab === "charts" && charts.length > 0
+                ? "grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)]"
+                : "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
+            }`}
+          >
+            <Workspace files={files} />
+            <SandboxPanel activity={activity} charts={charts} />
+          </div>
+        </main>
+        <ChartDialog />
+      </div>
     </ChartLibraryContext.Provider>
   );
+}
+
+/**
+ * Keeps the history sidebar current: a run starting registers a new
+ * conversation (so it appears immediately, titled by its first message), and a
+ * run ending moves it to the top.
+ */
+function useHistoryRefresh(running: boolean) {
+  const { refreshHistory } = useSession();
+  const previous = useRef(running);
+  useEffect(() => {
+    if (previous.current !== running) refreshHistory();
+    previous.current = running;
+  }, [running, refreshHistory]);
 }
 
 /**
@@ -203,16 +245,39 @@ function useFocusPanelTool(charts: Chart[]) {
   });
 }
 
-function Header({ running }: { running: boolean }) {
+function Header({
+  running,
+  sidebarOpen,
+  onToggleSidebar,
+}: {
+  running: boolean;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}) {
   return (
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-wb-border bg-wb-panel px-4 py-2.5">
-      <div className="flex items-baseline gap-2.5">
-        <h1 className="text-[13px] font-semibold tracking-tight">
-          Intelligence Workbench
-        </h1>
-        <span className="hidden text-[11.5px] text-wb-faint sm:inline">
-          Managed Deep Agents &middot; CopilotKit
-        </span>
+      <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-label={sidebarOpen ? "Hide history" : "Show history"}
+          aria-pressed={sidebarOpen}
+          title={sidebarOpen ? "Hide history" : "Show history"}
+          className="hidden rounded-md p-1 text-wb-muted transition-colors hover:bg-wb-panel-alt hover:text-wb-text lg:block"
+        >
+          <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden>
+            <rect x="2" y="3" width="12" height="10" rx="2" />
+            <path d="M6 3v10" />
+          </svg>
+        </button>
+        <div className="flex items-baseline gap-2.5">
+          <h1 className="text-[13px] font-semibold tracking-tight">
+            Intelligence Workbench
+          </h1>
+          <span className="hidden text-[11.5px] text-wb-faint sm:inline">
+            Managed Deep Agents &middot; CopilotKit
+          </span>
+        </div>
       </div>
 
       <div
@@ -229,6 +294,8 @@ function Header({ running }: { running: boolean }) {
           />
           {running ? "Working" : "Idle"}
         </span>
+
+        <UserMenu />
       </div>
     </header>
   );
@@ -272,6 +339,45 @@ function RunnerToggle() {
           {option}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Who is signed in, and the way out. */
+function UserMenu() {
+  const { user, signOut } = useSession();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex items-center gap-2 rounded-full py-0.5 pl-0.5 pr-2 transition-colors hover:bg-wb-panel-alt"
+      >
+        <Avatar name={user.name} size="sm" />
+        <span className="hidden text-[11.5px] text-wb-muted sm:inline">{user.name}</span>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-40 mt-1.5 w-52 rounded-xl border border-wb-border bg-wb-panel p-1.5"
+          style={{ boxShadow: "var(--wb-shadow)" }}
+        >
+          <p className="px-2.5 pb-1.5 pt-1 text-[11px] text-wb-faint">
+            Signed in as <span className="text-wb-text">{user.name}</span> · {user.role}
+          </p>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => void signOut()}
+            className="w-full rounded-lg px-2.5 py-1.5 text-left text-[12px] text-wb-text transition-colors hover:bg-wb-panel-alt"
+          >
+            Switch user
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

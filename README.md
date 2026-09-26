@@ -236,6 +236,43 @@ image would have to be base64-encoded into a `write_file` argument to be visible
 means the model generates tens of thousands of output tokens for something that's really a
 handful of numbers — the same visibility rule, just paid for the expensive way.
 
+### Users and history — who owns what
+
+Demo sign-in: pick one of three users, no password (`web/src/lib/users.ts`). The choice is an
+httpOnly cookie that only the server reads. Real identity is Milestone 8 — MDA 0.8 supports
+Supabase logins directly via `auth.supabase(...)` in `identity.py`.
+
+```mermaid
+flowchart LR
+    B["Browser\n(cookie: wb_user)"] --> R["route.ts\nreads cookie → stamps x-workbench-user\n(overwrites whatever the browser sent)\nrefuses another user's thread → 404"]
+    R --> H["HistoryRunner\n(InMemoryAgentRunner + history)"]
+    H -->|"run: register thread → owner, title"| DB[("web/.data/workbench.sqlite\nper-user index + snapshot")]
+    H -->|"run ends: snapshot"| DB
+    H --> A["WorkbenchLangGraphAgent → mda dev\nthread metadata.user_id stamped"]
+    H -->|"connect: memory → agent server → snapshot"| DB
+```
+
+- **Each conversation already has its own sandbox** — MDA scopes the sandbox per thread (the
+  only scope it accepts), so "per-user folders" is really "per-user conversations": `/reports/`
+  in Alex's conversation and in Sam's are different machines. The sandbox is also temporary
+  (reclaimed after 10 idle minutes), so it is never where history lives.
+- **History is the conversation, not the disk.** Reports and charts are rebuilt from the saved
+  messages (the `write_file` / `render_chart` arguments), so reopening a conversation restores
+  its chat, plan, files and charts even after its sandbox is gone. Continuing an old conversation
+  gets a fresh sandbox; the agent still sees the whole conversation.
+- **Why the web app keeps its own copy:** under `mda dev`, LangGraph's thread persistence lives in
+  `agent/.mda/build/`, which `mda dev` and `mda build` both empty before compiling — every agent
+  restart erases local threads. A deployed MDA agent has durable threads; the SQLite store is what
+  makes history survive on a laptop.
+- **Ownership is enforced server-side**: `/api/threads` lists only the cookie's user, and
+  `route.ts` answers 404 to run / connect / stop on someone else's thread — verified including a
+  spoofed `x-workbench-user` header.
+- History is kept for **Local** mode. Cloud mode stores conversations in CopilotKit Intelligence.
+
+Verified with `web/scripts/verify-history.mjs` (seeded conversations, zero API cost) plus one
+single-call live run confirming registration, the post-run snapshot, and `user_id` on the agent
+thread.
+
 ### File map — what governs each part of the flow
 
 | File | Role |
@@ -251,14 +288,17 @@ handful of numbers — the same visibility rule, just paid for the expensive way
 | `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
 | `identity.py` | Declares LangSmith-API-key auth for the deployment |
 | `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
-| `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Cloud/local runner dispatch on the `x-runner` header |
+| `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Sign-in and ownership checks, then Cloud/local runner dispatch on the `x-runner` header |
 | `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity / Charts data from agent state and messages |
 | `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (chart gallery) |
 | `web/src/components/charts/` | One chart renderer (`ChartPlot`: unit panels, wrapped labels) shared by the gallery, the full-screen view (`ChartDialog`: all charts, table, PNG/SVG/CSV export) and charts embedded in reports |
 | `web/src/lib/downloads.ts` | Client-side downloads — report files, chart PNG/SVG/CSV; "Save as PDF" is the browser's print, via a print-only copy of the report |
 | `agent_core/approvals.py` | Plain-language approval text for `execute` — the `interrupt_on` description function |
 | `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — renders the plain-language description, emits `{decisions:[…]}` |
-| `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file), for the `focus_panel` frontend tool |
+| `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), for the `focus_panel` frontend tool |
+| `web/src/lib/users.ts`, `web/src/components/SessionGate.tsx` | Demo sign-in; owns the open conversation id (`?t=` in the URL) and hands it to `<CopilotKit threadId>` |
+| `web/src/lib/server/history-runner.ts`, `history-store.ts` | Per-user history: registers and snapshots conversations, restores them on reopen |
+| `web/src/components/HistorySidebar.tsx` | The conversation list — grouped by date, rename, delete |
 
 ### Not wired yet
 

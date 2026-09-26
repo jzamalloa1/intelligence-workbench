@@ -70,6 +70,8 @@ async function scenario(name, act) {
     await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: stream });
   });
 
+  // The app sits behind demo sign-in; the cookie is shared by the page's context.
+  await page.request.post(`${BASE}/api/session`, { data: { userId: "alex" } });
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.locator("textarea").first().fill(`approval check: ${name}`);
   await page.locator("textarea").first().press("Enter");

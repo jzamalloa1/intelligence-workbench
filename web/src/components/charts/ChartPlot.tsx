@@ -51,7 +51,8 @@ export function facetsOf(chart: Chart): Facet[] {
   return [...byUnit.values()];
 }
 
-const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 });
+// Significant digits, not fraction digits: 0.015 must not print as "0.02" next to a real 0.02 tick.
+const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 });
 const precise = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
 
 export function formatValue(value: number, unit: string): string {

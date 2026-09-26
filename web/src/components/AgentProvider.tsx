@@ -27,9 +27,15 @@ import { RunnerModeContext, type RunnerMode } from "@/lib/runner-mode";
  */
 export function AgentProvider({
   intelligenceAvailable,
+  userId,
+  threadId,
   children,
 }: {
   intelligenceAvailable: boolean;
+  /** Remounts on sign-in/out, so one person's agent state never leaks into another's. */
+  userId: string;
+  /** The open conversation — switching conversations is changing this. */
+  threadId: string;
   children: React.ReactNode;
 }) {
   // Local is the default, deliberately. Cloud's realtime gateway gives up
@@ -61,7 +67,8 @@ export function AgentProvider({
   return (
     <RunnerModeContext.Provider value={{ mode, setMode, intelligenceAvailable }}>
       <CopilotKit
-        key={mode}
+        key={`${mode}:${userId}`}
+        threadId={threadId}
         runtimeUrl="/api/copilotkit"
         agent="workbench"
         useSingleEndpoint={false}

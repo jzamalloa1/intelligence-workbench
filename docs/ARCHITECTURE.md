@@ -405,6 +405,19 @@ Seen in the same recording, not the cause, left alone for now: one run relayed ~
 full `STATE_SNAPSHOT`s (~40 KB each, the whole message list every time) plus ~2,600 `RAW`
 events. The browser handled it, but it is worth trimming if long runs start to feel sluggish.
 
+**Local agent-side history is wiped by every compile (2026-09-26).** Mid-session, the agent server
+suddenly had zero threads — including the user's earlier research runs. Cause: `mda dev` runs
+LangGraph's in-memory server inside `agent/.mda/build/`, and its dev persistence
+(`.langgraph_api/*.pckl`) lives in that directory. `mda build --help` says it plainly: *"The
+directory is emptied before the build."* A compile check (`mda build .`) run while `mda dev` was
+up emptied it under the live server — the persistence files were recreated at that minute, 6
+bytes each. `mda dev` compiles into the same directory on start, so every agent restart does the
+same. Two consequences: compile checks now use `mda build . --out <scratch>` (CLAUDE.md), and
+per-user history is kept by the web app in its own SQLite store (`lib/server/history-store.ts`),
+snapshotted from the agent server after every run — the agent server is read live when it still
+has a thread, and the snapshot is the fallback. A deployed MDA agent has durable threads, so this
+is a local-dev concern only.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

@@ -20,9 +20,11 @@
 import {
   CopilotKitIntelligence,
   CopilotRuntime,
-  InMemoryAgentRunner,
   createCopilotRuntimeHandler,
 } from "@copilotkit/runtime/v2";
+import { HistoryRunner } from "@/lib/server/history-runner";
+import { currentUser, json, mayAccess } from "@/lib/server/session";
+import { USER_HEADER } from "@/lib/users";
 import { WorkbenchLangGraphAgent } from "@/lib/workbench-agent";
 
 /** Must match `define_deep_agent(name=...)` — MDA registers it as the graph id. */
@@ -57,7 +59,8 @@ function buildAgent() {
 const localHandler = createCopilotRuntimeHandler({
   runtime: new CopilotRuntime({
     agents: { [AGENT_ID]: buildAgent() },
-    runner: new InMemoryAgentRunner(),
+    // InMemoryAgentRunner + durable per-user history (lib/server/history-runner.ts).
+    runner: new HistoryRunner(),
   }),
   basePath: "/api/copilotkit",
 });
@@ -73,10 +76,12 @@ const intelligenceHandler = intelligenceApiKey
         agents: { [AGENT_ID]: buildAgent() },
         intelligence: new CopilotKitIntelligence({ apiKey: intelligenceApiKey }),
         // Required by the Intelligence variant of the options union: threads are
-        // stored per user, so it needs to know who is asking. This is a local
-        // single-user demo, so everyone is the same user — swap in real auth
-        // before exposing this to anyone else.
-        identifyUser: () => ({ id: "local", name: "Local User" }),
+        // stored per user, so it needs to know who is asking — the demo user the
+        // handler below stamped on the request.
+        identifyUser: (request: Request) => {
+          const id = request.headers.get(USER_HEADER) ?? "anonymous";
+          return { id, name: id };
+        },
       }),
       basePath: "/api/copilotkit",
     })
@@ -95,7 +100,50 @@ const intelligenceHandler = intelligenceApiKey
 async function handler(request: Request): Promise<Response> {
   const wantsLocal = request.headers.get("x-runner") === "local";
   const active = wantsLocal || !intelligenceHandler ? localHandler : intelligenceHandler;
-  return active(request);
+  const prepared = await withUser(request);
+  return prepared instanceof Response ? prepared : active(prepared);
+}
+
+/**
+ * Identity and ownership, before CopilotKit sees the request.
+ *
+ * The signed-in user comes from the httpOnly session cookie and is stamped on
+ * the request as `x-workbench-user` — overwriting anything the browser sent, so
+ * the header can be trusted downstream (the runtime forwards it to the agent,
+ * where it becomes thread metadata and the history runner's owner). Any agent
+ * call naming a thread that belongs to someone else is refused with a 404, the
+ * same answer as for a thread that doesn't exist.
+ */
+async function withUser(request: Request): Promise<Response | Request> {
+  const url = new URL(request.url);
+  const call = /\/agent\/[^/]+\/(run|connect|stop)(?:\/([^/]+))?/.exec(url.pathname);
+  const user = await currentUser();
+  if (call && !user) return json({ error: "Not signed in" }, 401);
+
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+
+  if (call && user) {
+    const threadId = call[1] === "stop" ? call[2] : threadIdOf(body);
+    if (threadId && !mayAccess(decodeURIComponent(threadId), user.id)) {
+      return json({ error: "Not found" }, 404);
+    }
+  }
+
+  const headers = new Headers(request.headers);
+  headers.delete(USER_HEADER);
+  if (user) headers.set(USER_HEADER, user.id);
+  return new Request(request.url, { method: request.method, headers, body, signal: request.signal });
+}
+
+function threadIdOf(body: string | undefined): string | undefined {
+  try {
+    const parsed = JSON.parse(body ?? "") as { threadId?: unknown; input?: { threadId?: unknown } };
+    const id = parsed.threadId ?? parsed.input?.threadId;
+    return typeof id === "string" ? id : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const GET = handler;
