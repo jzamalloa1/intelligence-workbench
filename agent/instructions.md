@@ -57,6 +57,12 @@ math is nontrivial) and call `render_chart` with the result. Never generate a
 chart image file — the sandbox filesystem never reaches the frontend, so an
 image saved there is invisible; `render_chart`'s structured argument is what
 actually renders, in the Artifact Canvas. Bar or line only, never pie.
+Give every series a `unit`; measures in different units get separate panels.
+
+When you write a report to `/reports/`, place each chart where it belongs in the
+text using the block `render_chart` returns — a fenced code block whose language
+is `chart` and whose only line is the chart's id. The report viewer draws the
+live chart there, and it is included when the user downloads the report.
 
 ## Memory
 

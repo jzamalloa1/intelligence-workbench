@@ -16,12 +16,25 @@ of the whole run aborting on one malformed chart request.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from langchain.tools import tool
 
 _MAX_SERIES = 6
 _MAX_CATEGORIES = 12
+_MAX_ID_LENGTH = 48
+
+
+def chart_slug(text: str) -> str:
+    """Normalize a chart id (or, when none is given, the title) into a slug.
+
+    Mirrored exactly by `chartSlug` in web/src/lib/workbench.ts — the frontend
+    derives the same id from the same arguments, which is what lets a report's
+    ```chart <id>``` block find the chart it names. Change both or neither.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug[:_MAX_ID_LENGTH].strip("-") or "chart"
 
 
 @tool(parse_docstring=True)
@@ -32,6 +45,7 @@ def render_chart(
     series: list[dict[str, Any]],
     x_label: str = "",
     y_label: str = "",
+    chart_id: str = "",
 ) -> dict[str, Any]:
     """Render a chart in the Artifact Canvas from already-computed numbers.
 
@@ -48,12 +62,17 @@ def render_chart(
             for a trend across an ordered axis.
         categories: The x-axis labels, in display order. 2-12 items — a
             single category is not a chart, use a sentence instead.
-        series: 1-6 series, each `{"name": str, "values": [number, ...]}` with
-            exactly one value per category, in the same order. More than 6
-            stops reading as a chart — fold minor series into "Other" or split
-            into more than one chart.
+        series: 1-6 series, each `{"name": str, "values": [number, ...],
+            "unit": str}` with exactly one value per category, in the same
+            order. Always set `unit` (e.g. "USD", "ms", "%"). Series with
+            different units are drawn as separate stacked panels, each with
+            its own axis — never forced onto one shared scale, where the
+            smaller-unit series would look like zero. More than 6 series stops
+            reading as a chart — fold minor series into "Other" or split.
         x_label: Optional x-axis label.
-        y_label: Optional y-axis label.
+        y_label: Optional y-axis label, used when every series shares a unit.
+        chart_id: Optional short id; defaults to a slug of the title. Use the
+            id this tool returns to embed the chart in a markdown report.
     """
     if len(categories) < 2:
         return {
@@ -94,9 +113,14 @@ def render_chart(
                 )
             }
 
+    resolved_id = chart_slug(chart_id or title)
+    units = {str(s.get("unit") or "") for s in series}
     return {
         "rendered": True,
+        "chart_id": resolved_id,
         "chart_type": chart_type,
         "series_count": len(series),
         "category_count": len(categories),
+        "panels": len(units),
+        "embed_in_report": f"```chart\n{resolved_id}\n```",
     }

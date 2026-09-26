@@ -130,3 +130,58 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/*
+  "Save as PDF" for reports (Workspace.tsx). The report is rendered a second
+  time into .wb-print-root, a direct child of <body>, laid out off-screen so
+  its charts can measure themselves; while printing, everything else is hidden.
+  The print copy is always light — a PDF isn't a screen, and dark ink on white
+  paper is what people expect to receive.
+*/
+.wb-print-root {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 720px;
+  color-scheme: light;
+  --wb-bg: oklch(100% 0 0);
+  --wb-panel: oklch(100% 0 0);
+  --wb-panel-alt: oklch(97% 0.004 250);
+  --wb-border: oklch(91% 0.006 250);
+  --wb-border-strong: oklch(84% 0.008 250);
+  --wb-text: oklch(24% 0.015 265);
+  --wb-muted: oklch(52% 0.012 265);
+  --wb-faint: oklch(66% 0.01 265);
+  --wb-accent: oklch(56% 0.16 262);
+  --wb-accent-soft: oklch(95% 0.03 262);
+  --wb-series-1: #2a78d6;
+  --wb-series-2: #eb6834;
+  --wb-series-3: #1baf7a;
+  --wb-series-4: #eda100;
+  --wb-series-5: #e87ba4;
+  --wb-series-6: #008300;
+  background: var(--wb-panel);
+  color: var(--wb-text);
+}
+
+/* Hover state has no meaning on paper. */
+.wb-print-root .recharts-tooltip-wrapper,
+.wb-print-root .recharts-tooltip-cursor {
+  display: none !important;
+}
+
+@media print {
+  html.wb-printing body {
+    background: white;
+  }
+  html.wb-printing body > *:not(.wb-print-root) {
+    display: none !important;
+  }
+  html.wb-printing .wb-print-root {
+    position: static;
+    width: auto;
+  }
+  @page {
+    margin: 16mm;
+  }
+}

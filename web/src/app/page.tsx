@@ -17,10 +17,16 @@ import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { Workspace } from "@/components/Workspace";
-import { deriveFromMessages, readTodos } from "@/lib/workbench";
+import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
 import { INSPECTOR_ENABLED } from "@/lib/config";
 import { useRunnerMode } from "@/lib/runner-mode";
-import { WorkbenchUIContext, useWorkbenchUI, type SandboxTab } from "@/lib/workbench-ui";
+import {
+  ChartLibraryContext,
+  WorkbenchUIContext,
+  useWorkbenchUI,
+  type SandboxTab,
+} from "@/lib/workbench-ui";
+import { ChartDialog } from "@/components/charts/ChartDialog";
 
 /**
  * Holds the UI state the agent is allowed to drive, above everything that
@@ -30,10 +36,18 @@ import { WorkbenchUIContext, useWorkbenchUI, type SandboxTab } from "@/lib/workb
 export default function Page() {
   const [sandboxTab, setSandboxTab] = useState<SandboxTab>("console");
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+  const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
 
   const ui = useMemo(
-    () => ({ sandboxTab, setSandboxTab, openFilePath, setOpenFilePath }),
-    [sandboxTab, openFilePath],
+    () => ({
+      sandboxTab,
+      setSandboxTab,
+      openFilePath,
+      setOpenFilePath,
+      expandedChartId,
+      setExpandedChartId,
+    }),
+    [sandboxTab, openFilePath, expandedChartId],
   );
 
   return (
@@ -69,10 +83,12 @@ function Workbench() {
     [messages],
   );
 
+  const { sandboxTab } = useWorkbenchUI();
   useApprovals();
-  useFocusPanelTool();
+  useFocusPanelTool(charts);
 
   return (
+    <ChartLibraryContext.Provider value={charts}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Header running={running} />
 
@@ -89,13 +105,22 @@ function Workbench() {
           <ActivityTimeline activity={activity} />
         </div>
 
-        {/* Workspace + Sandbox get their own column once there's room for it. */}
-        <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3 xl:grid">
+        {/* Workspace + Sandbox get their own column once there's room for it.
+            The split follows what's on show: charts get the larger share. */}
+        <div
+          className={`hidden min-h-0 gap-3 transition-[grid-template-rows] duration-300 ease-out xl:grid ${
+            sandboxTab === "charts" && charts.length > 0
+              ? "grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)]"
+              : "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
+          }`}
+        >
           <Workspace files={files} />
           <SandboxPanel activity={activity} charts={charts} />
         </div>
       </main>
+      <ChartDialog />
     </div>
+    </ChartLibraryContext.Provider>
   );
 }
 
@@ -130,8 +155,8 @@ function useApprovals() {
  * agent can move the interface as part of answering rather than describing
  * where to look ("the chart is in the canvas" → it just opens the canvas).
  */
-function useFocusPanelTool() {
-  const { setSandboxTab, setOpenFilePath } = useWorkbenchUI();
+function useFocusPanelTool(charts: Chart[]) {
+  const { setSandboxTab, setOpenFilePath, setExpandedChartId } = useWorkbenchUI();
 
   useFrontendTool({
     name: "focus_panel",
@@ -139,7 +164,8 @@ function useFocusPanelTool() {
       "Bring part of the workbench UI to the user's attention: switch the Sandbox " +
       "panel between its Console and Charts tabs, and/or open a file you have " +
       "written in the Workspace viewer. Call this when you have just produced " +
-      "something the user should look at.",
+      "something the user should look at. Pass chart_id (the id render_chart " +
+      "returned) to open that chart full screen.",
     parameters: z.object({
       panel: z
         .enum(["console", "charts"])
@@ -149,15 +175,30 @@ function useFocusPanelTool() {
         .string()
         .optional()
         .describe("Absolute path of a file you wrote, e.g. /reports/summary.md, to open."),
+      chart_id: z
+        .string()
+        .optional()
+        .describe("A chart_id returned by render_chart, to open that chart full screen."),
     }),
-    handler: async ({ panel, file_path }) => {
+    handler: async ({ panel, file_path, chart_id }) => {
       if (panel) setSandboxTab(panel);
       if (file_path) setOpenFilePath(file_path);
+      let chartNote: string | undefined;
+      if (chart_id) {
+        const slug = chartSlug(chart_id);
+        const chart = [...charts].reverse().find((c) => c.chartId === slug);
+        if (chart) {
+          setExpandedChartId(chart.id);
+          chartNote = `opened chart ${slug} full screen`;
+        } else {
+          chartNote = `no chart with id ${slug} in this conversation`;
+        }
+      }
       // The return value goes back to the model as the tool result.
-      const did = [panel && `showed the ${panel} tab`, file_path && `opened ${file_path}`]
+      const did = [panel && `showed the ${panel} tab`, file_path && `opened ${file_path}`, chartNote]
         .filter(Boolean)
         .join(" and ");
-      return did ? `Done — ${did}.` : "Nothing to focus; pass panel or file_path.";
+      return did ? `Done — ${did}.` : "Nothing to focus; pass panel, file_path or chart_id.";
     },
   });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import type { Chart } from "./workbench";
 
 /**
  * UI state that both the user and the *agent* can drive.
@@ -18,9 +19,23 @@ export interface WorkbenchUIValue {
   /** Path of the file open in the Workspace viewer, or null when closed. */
   openFilePath: string | null;
   setOpenFilePath: (path: string | null) => void;
+  /** Tool-call id of the chart open in the full-screen view, or null. */
+  expandedChartId: string | null;
+  setExpandedChartId: (id: string | null) => void;
 }
 
 export const WorkbenchUIContext = createContext<WorkbenchUIValue | null>(null);
+
+/**
+ * Every chart in the conversation, for components that sit far from where
+ * charts are derived — a report embeds a chart by id, and the expanded view
+ * lists them all.
+ */
+export const ChartLibraryContext = createContext<Chart[]>([]);
+
+export function useChartLibrary(): Chart[] {
+  return useContext(ChartLibraryContext);
+}
 
 export function useWorkbenchUI(): WorkbenchUIValue {
   const ctx = useContext(WorkbenchUIContext);

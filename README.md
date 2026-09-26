@@ -56,7 +56,9 @@ negotiates once per agent instance whether Intelligence is available and caches 
 instance's lifetime, so the toggle forces a fresh instance (`key={mode}` on `<CopilotKit>`)
 rather than trying to change transport mid-session, which doesn't work in this stack. Verified
 live with `web/scripts/verify-toggle.mjs` (zero API cost — checks the negotiation re-fires
-without sending a prompt).
+without sending a prompt). The chart and download UI has the same kind of check,
+`web/scripts/verify-charts.mjs`, which answers the page's run request with a synthetic stream
+instead of calling the agent.
 
 ---
 
@@ -100,8 +102,9 @@ flowchart TD
     LEAD -->|"execute (optional)"| GATE{"interrupt_on\napproval gate"}
     GATE -->|"approve / edit"| SB
     GATE -->|"reject"| LEAD
-    LEAD -->|"render_chart"| CANVAS["Artifact Canvas"]
-    LEAD -->|"write_file"| REP["/reports/*.md — deliverable"]
+    LEAD -->|"render_chart → chart_id"| CANVAS["Artifact Canvas\n(gallery + full screen)"]
+    LEAD -->|"write_file"| REP["/reports/*.md — deliverable\n(chart blocks embed charts by id)"]
+    CANVAS -.chart_id.-> REP
     LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
 
     ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph\n(patched: workbench-agent.ts)"]
@@ -204,8 +207,9 @@ flowchart TD
 
     subgraph S3["C — the chart tool (what milestone 5 built)"]
         direction LR
-        C1["render_chart(spec={type, categories, series})"] --> C2["spec IS the argument —\ntiny JSON, not an image"]
+        C1["render_chart(title, chart_type, categories, series[{name, values, unit}])"] --> C2["spec IS the argument —\ntiny JSON, not an image"]
         C2 --> C3["Artifact Canvas renders an\ninteractive chart from it"]
+        C2 --> C4["returns chart_id — a report's\n```chart <id>``` block embeds the same chart"]
     end
 ```
 
@@ -231,14 +235,16 @@ handful of numbers — the same visibility rule, just paid for the expensive way
 | `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
 | `instructions.md` | The lead agent's system prompt — synced to Context Hub by MDA, not settable in `agent.py` |
 | `tools/research.py` | Tavily search — the only tool subagents get |
-| `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image) |
+| `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
 | `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
 | `identity.py` | Declares LangSmith-API-key auth for the deployment |
 | `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
 | `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Cloud/local runner dispatch on the `x-runner` header |
 | `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity / Charts data from agent state and messages |
-| `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (charts) |
+| `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (chart gallery) |
+| `web/src/components/charts/` | One chart renderer (`ChartPlot`: unit panels, wrapped labels) shared by the gallery, the full-screen view (`ChartDialog`: all charts, table, PNG/SVG/CSV export) and charts embedded in reports |
+| `web/src/lib/downloads.ts` | Client-side downloads — report files, chart PNG/SVG/CSV; "Save as PDF" is the browser's print, via a print-only copy of the report |
 | `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — parses the HITL request, emits `{decisions:[…]}` |
 | `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file), for the `focus_panel` frontend tool |
 
@@ -262,7 +268,7 @@ is no frontend Memory panel rendering it yet. All of this is tracked in [Roadmap
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
 | Skills (progressive disclosure) | Skills Rail — which `SKILL.md` activated, and when |
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
-| Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — interactive bar/line chart + table view |
+| Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — gallery of every chart, full-screen view with table + PNG/SVG/CSV export, and live charts embedded in reports (downloadable as `.md` or PDF) |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
 | Summarization + context offload | Context Meter — token gauge, marks each compaction |
 | Durable memory (`AGENTS.md`) | Memory panel — what it carried across sessions |

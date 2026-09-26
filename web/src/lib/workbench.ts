@@ -44,10 +44,15 @@ export interface Activity {
 export interface ChartSeries {
   name: string;
   values: number[];
+  /** "" when the model didn't say. Series are faceted by unit, never co-scaled. */
+  unit: string;
 }
 
 export interface Chart {
+  /** The tool call id — unique per render_chart call. */
   id: string;
+  /** The id a report embeds (```chart <chartId>```). Not unique: a re-render replaces. */
+  chartId: string;
   title: string;
   chartType: "bar" | "line";
   categories: string[];
@@ -69,6 +74,22 @@ const ACTIVITY_TOOLS = new Set([
 const FILE_WRITE_TOOLS = new Set(["write_file", "edit_file"]);
 const CHART_TOOL = "render_chart";
 const MAX_CHART_SERIES = 6;
+const MAX_CHART_ID_LENGTH = 48;
+
+/**
+ * Mirrors `chart_slug` in agent/tools/charts.py exactly — the agent is told the
+ * id it returns, and the frontend must derive the same one from the same
+ * arguments for a report's chart block to resolve. Change both or neither.
+ */
+export function chartSlug(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_CHART_ID_LENGTH)
+    .replace(/^-+|-+$/g, "");
+  return slug || "chart";
+}
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
@@ -153,13 +174,14 @@ function parseChart(id: string, args: Record<string, unknown>): Chart | undefine
     if (!name || !values) return [];
     // Align to the category count rather than reject on mismatch — one bad
     // series is more useful shown than the whole chart withheld.
-    return [{ name, values: categories.map((_, i) => num(values[i])) }];
+    return [{ name, values: categories.map((_, i) => num(values[i])), unit: str(rec.unit) ?? "" }];
   });
 
   if (series.length === 0) return undefined;
 
   return {
     id,
+    chartId: chartSlug(str(args.chart_id) || title),
     title,
     chartType,
     categories,

@@ -1,10 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import type { WorkspaceFile } from "@/lib/workbench";
-import { useWorkbenchUI } from "@/lib/workbench-ui";
+import { basename, downloadText } from "@/lib/downloads";
+import { chartSlug, type WorkspaceFile } from "@/lib/workbench";
+import { useChartLibrary, useWorkbenchUI } from "@/lib/workbench-ui";
+import { ChipButton, DownloadIcon, ExpandIcon } from "./charts/ChartControls";
+import { ChartLegend, ChartPlot } from "./charts/ChartPlot";
 import { EmptyState, Panel, Pill } from "./Panel";
 
 /**
@@ -36,7 +41,7 @@ export function Workspace({ files }: { files: WorkspaceFile[] }) {
         ) : (
           <ul className="flex flex-col gap-0.5 p-2">
             {files.map((file) => (
-              <li key={file.path}>
+              <li key={file.path} className="group/row relative">
                 <button
                   type="button"
                   onClick={() => setOpen(file)}
@@ -55,6 +60,17 @@ export function Workspace({ files }: { files: WorkspaceFile[] }) {
                     </span>
                   </span>
                 </button>
+                {file.content ? (
+                  <button
+                    type="button"
+                    onClick={() => downloadFile(file)}
+                    title={`Download ${basename(file.path)}`}
+                    aria-label={`Download ${basename(file.path)}`}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-wb-faint opacity-0 transition hover:bg-wb-panel hover:text-wb-text focus-visible:opacity-100 group-hover/row:opacity-100"
+                  >
+                    <DownloadIcon />
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -83,6 +99,11 @@ function FileIcon() {
   );
 }
 
+function downloadFile(file: WorkspaceFile) {
+  const type = extOf(file.path) === "md" ? "text/markdown" : "text/plain";
+  downloadText(basename(file.path), file.content ?? "", type);
+}
+
 /** Extension off a workspace path, lowercased, without the dot ("" if none). */
 function extOf(path: string): string {
   const name = path.split("/").pop() ?? path;
@@ -92,6 +113,30 @@ function extOf(path: string): string {
 
 function FileViewer({ file, onClose }: { file: WorkspaceFile; onClose: () => void }) {
   const isMarkdown = extOf(file.path) === "md";
+  const [printing, setPrinting] = useState(false);
+
+  // "Save as PDF" is the browser's own print-to-PDF: the report is rendered once
+  // more into a print-only root outside the app (charts included, light theme),
+  // and print CSS hides everything else. Charts need a beat to measure
+  // themselves before the print dialog snapshots the page.
+  useEffect(() => {
+    if (!printing) return;
+    const root = document.documentElement;
+    const previousTitle = document.title;
+    document.title = basename(file.path).replace(/\.md$/, ""); // the PDF's default filename
+    const finish = () => setPrinting(false);
+    const timer = setTimeout(() => {
+      root.classList.add("wb-printing");
+      window.print();
+    }, 350);
+    window.addEventListener("afterprint", finish);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("afterprint", finish);
+      root.classList.remove("wb-printing");
+      document.title = previousTitle;
+    };
+  }, [printing, file.path]);
 
   return (
     <div
@@ -109,11 +154,15 @@ function FileViewer({ file, onClose }: { file: WorkspaceFile; onClose: () => voi
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-wb-border px-4 py-2.5">
           <h3 className="truncate font-mono text-[12px] text-wb-text">{file.path}</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {!isMarkdown && extOf(file.path) ? <Pill>{extOf(file.path)}</Pill> : null}
+            <ChipButton onClick={() => downloadFile(file)} title="Download this file">
+              <DownloadIcon /> {isMarkdown ? ".md" : "Download"}
+            </ChipButton>
             {isMarkdown ? (
-              <Pill>rendered</Pill>
-            ) : extOf(file.path) ? (
-              <Pill>{extOf(file.path)}</Pill>
+              <ChipButton onClick={() => setPrinting(true)} title="Save as PDF, charts included">
+                PDF
+              </ChipButton>
             ) : null}
             <button
               type="button"
@@ -140,8 +189,73 @@ function FileViewer({ file, onClose }: { file: WorkspaceFile; onClose: () => voi
           )}
         </div>
       </div>
+      {printing
+        ? createPortal(
+            <div className="wb-print-root" aria-hidden>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {file.content}
+              </ReactMarkdown>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
+}
+
+/**
+ * A chart embedded in a report: the agent writes a fenced block whose language
+ * is `chart` and whose body is the id `render_chart` returned. The report is
+ * plain text in the sandbox; the chart lives in this conversation's tool calls
+ * — this is where the two meet.
+ */
+function ChartEmbed({ chartId }: { chartId: string }) {
+  const charts = useChartLibrary();
+  const { setExpandedChartId } = useWorkbenchUI();
+  // Latest wins: re-rendering a chart under the same id replaces it.
+  const chart = [...charts].reverse().find((c) => c.chartId === chartId);
+
+  if (!chart) {
+    return (
+      <div className="mb-3 rounded-lg border border-dashed border-wb-border-strong px-3 py-2.5 text-[11.5px] text-wb-faint">
+        Chart <code className="font-mono">{chartId}</code> isn’t in this conversation.
+      </div>
+    );
+  }
+
+  return (
+    <figure className="mb-4 break-inside-avoid rounded-xl border border-wb-border p-3">
+      <figcaption className="mb-2 flex items-start justify-between gap-2">
+        <span className="text-[12.5px] font-medium text-wb-text">{chart.title}</span>
+        <span className="print:hidden">
+          <ChipButton onClick={() => setExpandedChartId(chart.id)} ariaLabel="Expand chart" title="Open full screen">
+            <ExpandIcon />
+          </ChipButton>
+        </span>
+      </figcaption>
+      <div className="mb-2">
+        <ChartLegend chart={chart} />
+      </div>
+      <ChartPlot chart={chart} facetHeight={220} />
+    </figure>
+  );
+}
+
+/** The chart id inside a ```chart fenced block, read off the markdown AST. */
+function chartIdOf(node: unknown): string | null {
+  type HastNode = {
+    type?: string;
+    tagName?: string;
+    value?: string;
+    properties?: { className?: unknown };
+    children?: HastNode[];
+  };
+  const code = (node as HastNode | undefined)?.children?.[0];
+  if (code?.type !== "element" || code.tagName !== "code") return null;
+  const classes = Array.isArray(code.properties?.className) ? code.properties.className : [];
+  if (!classes.includes("language-chart")) return null;
+  const text = (code.children ?? []).map((c) => c.value ?? "").join("").trim().split("\n")[0];
+  return text ? chartSlug(text) : null;
 }
 
 /**
@@ -173,12 +287,16 @@ const markdownComponents: Components = {
   code: (p) => (
     <code className="rounded bg-wb-panel-alt px-1 py-0.5 font-mono text-[11.5px] text-wb-text" {...p} />
   ),
-  pre: (p) => (
-    <pre
-      className="mb-3 overflow-x-auto rounded-lg border border-wb-border bg-wb-panel-alt p-3 font-mono text-[11.5px] leading-relaxed text-wb-text"
-      {...p}
-    />
-  ),
+  pre: ({ node, ...p }) => {
+    const chartId = chartIdOf(node);
+    if (chartId) return <ChartEmbed chartId={chartId} />;
+    return (
+      <pre
+        className="mb-3 overflow-x-auto rounded-lg border border-wb-border bg-wb-panel-alt p-3 font-mono text-[11.5px] leading-relaxed text-wb-text"
+        {...p}
+      />
+    );
+  },
   blockquote: (p) => (
     <blockquote className="mb-3 border-l-2 border-wb-border-strong pl-3 text-wb-muted" {...p} />
   ),
