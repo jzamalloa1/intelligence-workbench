@@ -450,28 +450,76 @@ Things that cost time and are not obvious from the docs:
   exactly; we relax both.
 - **The docs run ahead of the CLI.** Verify flags against `mda --help` before trusting them.
 
-**Version audit (re-checked 2026-09-21)**, against PyPI/npm rather than assumed — both
+**Version audit (re-checked 2026-09-26)**, against PyPI/npm rather than assumed — both
 ecosystems ship weekly, so a version pinned a few weeks ago is worth re-verifying rather than
-trusting. The MDA row below is the proof: it went from "current" to three releases behind in
-**nine days**.
+trusting. The MDA row below is the proof: 0.7.3 → 0.8.3 was **four releases in three days**
+(0.8.0 and 0.8.1 on 09-24, 0.8.2 on 09-25, 0.8.3 on 09-26).
 
 | Package | Installed | Latest | Note |
 |---|---|---|---|
-| `managed-deepagents` | 0.7.3 | 0.7.3 | 0.6.1 → 0.7.2 on 09-11, → 0.7.3 on 09-21 |
+| `managed-deepagents` (CLI + project) | 0.8.3 | 0.8.3 | 0.7.3 → 0.8.3 on 09-26 — see below |
+| `deepagents` | resolved by `mda dev` | 0.7.19 | not ours to pin — the compiled build asks for `>=0.7.5` |
 | `copilotkit` (Python) | 0.1.96 | 0.1.96 | current |
-| `langchain` | 1.3.18 | 1.3.18 | current |
-| `langchain-anthropic` | 1.7.0 | 1.7.0 | current |
-| `langchain-openai` | 1.6.0 | 1.6.0 | current |
-| `langgraph` | 1.2.11 | 1.2.11 | current |
-| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.73.0 | 1.73.0 | bumped from 1.70.0 on 2026-09-22 |
-| `@ag-ui/langgraph` | 0.0.43 | 0.0.43 | pin released — 1.73.0 depends on 0.0.43 |
-| `next` | 16.3.4 | 16.3.4 | bumped, patch-only |
+| `langchain` | 1.4.2 | 1.4.2 | 1.4 is now stable — the old `1.4.0a2` warning below was about the alpha |
+| `langchain-core` | 1.6.5 | 1.6.5 | current |
+| `langchain-anthropic` | 1.7.4 | 1.7.4 | current |
+| `langchain-openai` | 1.6.6 | 1.6.6 | current |
+| `langgraph` | 1.2.12 | 1.2.12 | current |
+| `pydantic` | 2.13.5 | 2.13.5 (stable) | **constrained** `<2.14.0a0` — see below |
+| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.74.0 | 1.74.0 | bumped from 1.73.0 on 09-26 |
+| `@ag-ui/langgraph` | 0.0.43 | 0.0.43 | still exactly what `@copilotkit/runtime@1.74.0` depends on |
+| `@ag-ui/client` | 0.0.59 | 1.0.0 | **deliberately behind** — CopilotKit 1.74 still depends on 0.0.59 |
+| `next` | 16.3.6 | 16.3.6 | patch bump |
+| `react` / `react-dom` | 19.3.0 | 19.3.0 | minor bump; every peer range (`^19`) accepts it |
+| `typescript` | 5.9.3 | 7.0.2 | **deliberately behind** — 7 is the native-compiler major; not verified with Next 16's build-time typecheck |
+| `@types/node` | 24.x | 26.x | tracks the installed Node major (v24), not the newest types |
 
-The `@ag-ui/langgraph` pin is not staleness — `@copilotkit/runtime@1.70.0`'s own `package.json`
-still depends on exactly `0.0.42` (verified by reading it, not inferred), the same version that
-caused the duplicate-`@ag-ui/client` crash in §4d when tried at 0.0.43. Bumping our pin without
-CopilotKit bumping theirs would reintroduce that exact conflict. `next` had no such
-constraint, so it was bumped to 16.3.4.
+The `@ag-ui/langgraph` / `@ag-ui/client` rule is "match CopilotKit, not npm latest": bumping
+either past what `@copilotkit/runtime` itself depends on reintroduces the duplicate-
+`@ag-ui/client` crash in §4d. Verified by reading `@copilotkit/runtime@1.74.0`'s own
+dependencies, and after install `npm ls` shows a single `@ag-ui/client@0.0.59`.
+
+**CopilotKit 1.73 → 1.74 (2026-09-26).** Nothing breaking. Relevant fixes: per-message state
+cloning removed from react-core (long runs re-render less), and the realtime gateway no longer
+refreshes credentials for a socket that never opened. The gateway's **60 s reconnect ceiling is
+unchanged** (`reconnectGiveUpMs ?? 60_000`, still only on the internal
+`channels-intelligence/realtime-gateway` module, not on any public config) — so Local stays
+the default runner (§4d). `INTERRUPT_EVENT_NAME` is still `"on_interrupt"`, which the Milestone 6
+approval card depends on.
+
+**MDA 0.7.3 → 0.8.3 (2026-09-26).** The package repo is private, so this was read off a diff
+of the two published wheels. What touches us:
+
+- **`define_memory(scope="agent")` is rejected by the 0.8 CLI** at build time ("Use named
+  `agent` and `user` options with layer constructors") even though the Python function still
+  accepts `scope=` as legacy. `memory.py` now uses `define_memory(agent=MemoryLayer())`. This is
+  the one change that would have broken `mda dev` on restart.
+- **Per-user memory exists now**: `define_memory(user=MemoryLayer(allow=...))` mounts
+  `/memories/user/` scoped to the caller. It is only granted to a "trusted person" — a
+  verified Studio user or a managed Slack DM — which a browser reaching `mda dev` through
+  CopilotKit is not. Not enabled; revisit alongside `identity.py` in Milestone 8.
+- `define_deep_agent`'s author-set fields are **unchanged**; 0.8 only adds `**kwargs` so that
+  passing a runtime-owned key (`backend`, `store`, `memory`, …) raises a message naming where it
+  belongs instead of a bare `TypeError`.
+- New but unused: an `HttpChannel` (so Slack is no longer the only channel type), sandbox
+  egress `proxy_config` with `bearer()`/`basic()` connection headers, `ManagedRunContext` /
+  `ChannelContext`. `connectors.mcp` is gone as announced — we never used it.
+
+Verified without spending API credits: `mda build .` compiles, `mda dev` registers
+`workbench`, the compiled graph lists every middleware node (incl. `HumanInTheLoopMiddleware`
+and `CopilotKitMiddleware`), `tsc` + `next build` clean, `verify-toggle.mjs` PASS.
+
+**The pydantic beta that came in sideways.** A plain `uv lock --upgrade` resolved pydantic to
+**2.14.0b2** with no requirement anywhere naming a pre-release. Traced with `uv lock -vv`:
+`copilotkit` (Python) requires `pydantic-core>=2.35` *directly*; uv picks the newest
+stable-*numbered* core, 2.49.0, which is only paired with pydantic 2.14.0b2, so uv's default
+"if necessary" pre-release fallback kicks in for pydantic. The obvious fix,
+`[tool.uv] prerelease = "disallow"`, was tried and **broke `mda dev`**: mda runs
+`uv run --with langgraph-cli[inmem]` inside the project, so the setting applies there too, and
+langgraph-api needs `opentelemetry-semantic-conventions`, which only ever publishes `0.NNbN`
+versions. The fix is scoped instead — `constraint-dependencies = ["pydantic<2.14.0a0"]` in
+`agent/pyproject.toml` — and must be **lifted once pydantic 2.14.0 final ships**, or it will
+hold us back from it.
 
 **0.7.3 (2026-09-21).** Patch bump, nothing breaking. The one line that touches us:
 *"Remove MDA's default recursion limit"* — the managed runtime no longer imposes its own
@@ -517,9 +565,11 @@ From MDA's authoring contract — these are not preferences, they're hard limits
 - `name=` is required and must be a static identifier string.
 - Schedule declarations must be **static literals** — the compiler extracts them without
   executing your code.
-- Memory is **deployment-shared**: one `/memories/agent/` tree for all callers, no per-user
-  memory. Treat its contents as untrusted input; never let it grant authority.
-- Slack is the only channel. US LangSmith Cloud only. One agent entry per project.
+- Agent memory is **deployment-shared**: one `/memories/agent/` tree for all callers. Treat
+  its contents as untrusted input; never let it grant authority. (0.8 added a per-caller
+  `user` layer, but only for trusted identities — see the 0.8.3 notes in §6.)
+- US LangSmith Cloud only. One agent entry per project. (Slack was the only channel through
+  0.7; 0.8 exports an `HttpChannel` too — not evaluated.)
 - Build archive capped at 200 MB.
 - Restart `mda dev` after adding `memory.py`, `identity.py`, `schedules/`, or `channels/` —
   these are discovered at compile time, not by hot reload.

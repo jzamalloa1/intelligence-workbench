@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Intelligence Workbench — Managed Deep Agent backend"
 requires-python = ">=3.14"
 dependencies = [
-    "managed-deepagents>=0.7.3",
+    "managed-deepagents>=0.8.3",
     # Bridges the agent to CopilotKit: shared state, frontend tools, agent context.
     "copilotkit>=0.1.96",
     # Providers. Both are installed so LLM_PROVIDER can flip without a re-sync.
@@ -18,3 +18,17 @@ dependencies = [
 # it for managed-deepagents; stable releases exist, and uv applies the flag globally,
 # which silently resolves langchain to an alpha (1.4.0a2) and pydantic to a beta. The
 # current quickstart no longer recommends it. See docs/ARCHITECTURE.md §6.
+
+[tool.uv]
+# Keep pydantic on a stable release. Without this the lock silently lands on a beta:
+# copilotkit requires pydantic-core directly, uv picks the newest stable-numbered
+# pydantic-core (2.49.0), and that core is only paired with pydantic 2.14.0b2 — so
+# uv's "if necessary" pre-release fallback kicks in for pydantic.
+#
+# A global `prerelease = "disallow"` would be the tidier fix, and was tried: it breaks
+# `mda dev`, because mda runs `uv run --with langgraph-cli[inmem]` inside this project
+# (so this setting applies) and langgraph-api needs opentelemetry-semantic-conventions,
+# which only ever publishes `0.NNbN` versions. So the fix is scoped to pydantic.
+#
+# LIFT THIS once pydantic 2.14.0 final is on PyPI — until then it also blocks that.
+constraint-dependencies = ["pydantic<2.14.0a0"]

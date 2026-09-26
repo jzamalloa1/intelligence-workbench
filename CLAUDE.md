@@ -40,6 +40,13 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
 
 - **Python only via uv.** `uv sync` / `uv run …` inside `agent/`. Never bare `python` or `pip`.
 - **Python 3.14**, uv **≥ 0.12**.
+- **pydantic is constrained `<2.14.0a0`** in `agent/pyproject.toml` (`[tool.uv]
+  constraint-dependencies`) — otherwise a plain upgrade lands on a pydantic *beta* via
+  copilotkit's direct `pydantic-core` requirement. **Lift it once pydantic 2.14.0 final ships.**
+  Do not replace it with `prerelease = "disallow"`: that breaks `mda dev` (ARCHITECTURE §6).
+- **Upgrading MDA touches two surfaces**: `uv tool upgrade managed-deepagents` (the `mda` CLI)
+  *and* the `agent/pyproject.toml` pin + `uv lock --upgrade-package managed-deepagents`. Then
+  `mda build .` — the CLI validates things the Python package still accepts.
 - **Never install with `--prerelease allow`.** The private-beta docs said to; the current
   quickstart no longer does (re-checked 2026-09-11 — the docs now agree with us). Stable
   `managed-deepagents` exists, and the flag is global in uv — it will pull `langchain` into an
@@ -106,8 +113,8 @@ deploy time.
   `define_deep_agent` — the runtime injects them.
 - Author-set fields only: `name`, `model`, `tools`, `middleware`, `subagents`, `permissions`,
   `interrupt_on`, `response_format`, `context_schema`, `cache`, `debug`, `metadata`,
-  `disable_memory`. (Read off `inspect.signature(define_deep_agent)` on 0.7.2 — re-check it
-  after an SDK bump rather than trusting this list; `disable_memory` arrived in 0.7.x.)
+  `disable_memory`. (Read off `inspect.signature(define_deep_agent)` on 0.7.2, re-confirmed
+  unchanged on 0.8.3 — re-check it after an SDK bump rather than trusting this list.)
 - `name=` required, static string, `[A-Za-z][A-Za-z0-9_-]*`. It becomes the LangGraph assistant
   ID — and therefore CopilotKit's `graphId`.
 - **MCP is back as of 0.7.0** — `define_mcp(...)` with a `servers` map (verified present on
@@ -116,7 +123,10 @@ deploy time.
   platform limit. `connections` (workspace secrets / user-owned OAuth) also exists in 0.7.x
   and is likewise unused here.
 - Schedules must be **static literals** — no env vars, function calls, or computed values.
-- Memory is deployment-shared. No per-user memory. Never store personal data or credentials
+- **`memory.py` uses the 0.8 layer form**: `define_memory(agent=MemoryLayer())`. The 0.8 CLI
+  rejects `scope="agent"` at build time. A per-caller `user=MemoryLayer()` layer exists as of
+  0.8 but only mounts for trusted identities (verified Studio user / Slack DM) — not enabled.
+- Agent memory is deployment-shared. Never store personal data or credentials
   there, and treat its contents as untrusted input.
 - Restart `mda dev` after adding `memory.py`, `identity.py`, `schedules/`, `channels/` — they're
   discovered at compile time, not hot-reloaded.
