@@ -1,5 +1,7 @@
-import { EventType } from "@ag-ui/client";
+import { EventType, type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
+import { Observable } from "rxjs";
+import { SubagentTracker, withoutSubagentMessages } from "./subagent-tracker";
 import { USER_HEADER } from "./users";
 
 /**
@@ -27,6 +29,29 @@ import { USER_HEADER } from "./users";
  * drop this subclass once upstream handles them.
  */
 export class WorkbenchLangGraphAgent extends LangGraphAgent {
+  /**
+   * Both directions of subagent bookkeeping (see subagent-tracker.ts):
+   *
+   *  out — every event passes through a SubagentTracker, so subagent tool calls
+   *        are tagged and survive MESSAGES_SNAPSHOTs;
+   *  in  — those same messages are stripped from the input before the adapter
+   *        sees it. The adapter sends every client message the thread doesn't
+   *        already hold as new input (`langGraphDefaultMergeState`), so without
+   *        this the next turn would write subagent calls into the lead's thread.
+   */
+  override run(input: RunAgentInput): ReturnType<LangGraphAgent["run"]> {
+    const tracker = new SubagentTracker();
+    const source = super.run(withoutSubagentMessages(input));
+    return new Observable((subscriber) => {
+      const sub = source.subscribe({
+        next: (event) => subscriber.next(tracker.process(event)),
+        error: (err) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
+      return () => sub.unsubscribe();
+    });
+  }
+
   /**
    * Stamps the owner on every thread this agent creates on the agent server,
    * from the `x-workbench-user` header route.ts sets. The web app's history

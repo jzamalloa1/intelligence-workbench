@@ -17,7 +17,13 @@ import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { Workspace } from "@/components/Workspace";
-import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
+import {
+  chartSlug,
+  deriveFromMessages,
+  readTodos,
+  subagentToolCallIds,
+  type Chart,
+} from "@/lib/workbench";
 import { INSPECTOR_ENABLED } from "@/lib/config";
 import { useRunnerMode } from "@/lib/runner-mode";
 import {
@@ -68,11 +74,6 @@ function ConversationView() {
 }
 
 function Workbench() {
-  // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
-  // bare row per tool call that says nothing about what the agent did; this
-  // renders the tool, its target, and an expandable result instead.
-  useRenderTool({ name: "*", render: (p) => <ToolCard {...p} /> });
-
   // Without `updates` the hook does not subscribe and nothing here ever moves.
   // State drives the plan; messages drive files and activity.
   const { agent } = useAgent({
@@ -85,6 +86,21 @@ function Workbench() {
   });
 
   const messages = agent?.messages ?? [];
+
+  // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
+  // bare row per tool call that says nothing about what the agent did; this
+  // renders the tool, its target, and an expandable result instead. Subagent
+  // tool calls (often 50+ searches per run) are left out of the chat — the
+  // Activity panel shows them. Re-registered when that set changes.
+  const subagentCalls = useMemo(() => subagentToolCallIds(messages), [messages]);
+  const subagentKey = [...subagentCalls].join(",");
+  useRenderTool(
+    {
+      name: "*",
+      render: (p) => (subagentCalls.has(p.toolCallId) ? null : <ToolCard {...p} />),
+    },
+    [subagentKey],
+  );
   const running = agent?.isRunning ?? false;
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);

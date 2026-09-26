@@ -418,7 +418,7 @@ snapshotted from the agent server after every run — the agent server is read l
 has a thread, and the snapshot is the fallback. A deployed MDA agent has durable threads, so this
 is a local-dev concern only.
 
-**Subagent work is visible live, then silently dropped (2026-09-26, not fixed).** Asked why the
+**Subagent work is visible live, then silently dropped (2026-09-26, fixed the same day).** Asked why the
 Workspace showed `/reports/` but never `/research/`. Two separate facts, both verified:
 
 1. *That run's researchers wrote nothing.* The recorded stream (replayed from the Local runner)
@@ -436,11 +436,32 @@ Workspace showed `/reports/` but never `/research/`. Two separate facts, both ve
    `/research/` files the researchers had written; none survived in the Workspace. The files
    themselves are intact in the sandbox.
 
-Candidate fix: `HistoryRunner` already sees every event, so it can collect the subagents' tool-call
-messages as they stream and re-insert them — after the `task` call that spawned them — into each
-`MESSAGES_SNAPSHOT` it passes through, and save that augmented list as the history snapshot. That
-also raises a UX choice: 50+ subagent searches per run are noise in the chat transcript, so they
-probably belong in the Activity panel only.
+Fix (`web/src/lib/subagent-tracker.ts`, applied in `WorkbenchLangGraphAgent.run`):
+
+- *Outbound.* A subagent tool call is recognised by its graph path — one level deeper than the
+  lead's tools (`tools:<id>|tools:<id>`); verified on the recording, where all 55 researcher calls
+  and none of the lead's 14 have the `|`. It is tagged with AG-UI's own `subagentRunId` (the first
+  path segment, i.e. one id per `task`) and given a stable parent message id. Every
+  `MESSAGES_SNAPSHOT` gets those calls re-inserted after the lead message holding the `task` call,
+  with the ids the client already has, so nothing moves. It has to live in the agent rather than
+  `HistoryRunner`: the in-memory runner records events before a runner subclass sees them, and a
+  reconnect would replay the unfixed snapshots.
+- *Inbound.* The adapter's `langGraphDefaultMergeState` sends every client message its thread
+  doesn't hold as new input — re-inserted subagent calls would be written into the lead's thread
+  on the next turn, between a `tool_use` and its result. `withoutSubagentMessages` strips them
+  (and their tool results) from the run input first.
+- *History* now saves the run's last (augmented) snapshot instead of re-reading the lead-only
+  thread, and reopening prefers it.
+- *UI.* Subagent calls are hidden from the chat (50+ searches per run is noise there), shown in
+  the Activity panel tagged "subagent", and subagent files are labelled "by a researcher".
+
+Researchers are also now required to write exactly one `/research/<topic>.md` notes file
+(findings, key numbers, sources) instead of "as you go", so the evidence behind a report is
+there every run. Costs roughly one file of output tokens per researcher.
+
+Verified at zero API cost: the recorded run replayed through the tracker (55 calls tagged across
+3 subagent runs; final snapshot 134 messages, placed after the `task` message, lead order
+unchanged; next-turn input 135 → 25) and `web/scripts/verify-subagents.mjs` in the browser.
 
 ## 5. Provider-agnostic model layer
 

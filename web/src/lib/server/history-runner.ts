@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { BaseEvent } from "@ag-ui/client";
+import { EventType, type BaseEvent } from "@ag-ui/client";
 import {
   InMemoryAgentRunner,
   type AgentRunnerConnectRequest,
@@ -8,7 +8,7 @@ import {
 } from "@copilotkit/runtime/v2";
 import { Observable } from "rxjs";
 import { USER_HEADER } from "../users";
-import { historyEvents, pendingInterruptsOf, snapshotFromLangGraph } from "./history-events";
+import { historyEvents, pendingInterruptsOf, snapshotFromLangGraph, uiState } from "./history-events";
 import { getSnapshot, saveSnapshot, touchThread } from "./history-store";
 import { getThreadState } from "./langgraph";
 
@@ -20,11 +20,11 @@ import { getThreadState } from "./langgraph";
  * an empty chat. This subclass:
  *
  *  - on `run`: registers the thread under the signed-in user (title from the
- *    first message) and, once the run ends, snapshots the conversation from the
- *    agent server into the history store;
+ *    first message) and, once the run ends, saves the run's last message and
+ *    state snapshots — subagent work included — into the history store;
  *  - on `connect`: serves the in-memory replay when there is one, and otherwise
- *    rebuilds the conversation — live from the agent server if it still has the
- *    thread, else from the last snapshot.
+ *    rebuilds the conversation from the saved snapshot (the agent server's
+ *    thread only when there is none).
  *
  * Ownership is enforced before either is reached, in route.ts.
  */
@@ -36,18 +36,31 @@ export class HistoryRunner extends InMemoryAgentRunner {
     const threadId = request.threadId;
     if (userId) touchThread(threadId, userId, firstUserText(request.input.messages));
 
+    // The last snapshots of the run, as the browser received them — which,
+    // unlike the agent server's thread, include subagent work (the agent's
+    // SubagentTracker re-inserts it into every MESSAGES_SNAPSHOT).
+    let messages: unknown[] | undefined;
+    let state: Record<string, unknown> | undefined;
+    const save = () => {
+      // Fire and forget: history is a convenience and must never fail a run.
+      void snapshot(threadId, messages, state);
+    };
+
     const source = super.run(request);
     return new Observable<BaseEvent>((subscriber) => {
       const sub = source.subscribe({
-        next: (event) => subscriber.next(event),
+        next: (event) => {
+          const e = event as BaseEvent & { messages?: unknown[]; snapshot?: Record<string, unknown> };
+          if (e.type === EventType.MESSAGES_SNAPSHOT && e.messages) messages = e.messages;
+          if (e.type === EventType.STATE_SNAPSHOT && e.snapshot) state = uiState(e.snapshot);
+          subscriber.next(event);
+        },
         error: (err) => {
-          void snapshot(threadId);
+          save();
           subscriber.error(err);
         },
         complete: () => {
-          // After the run, so the snapshot includes its final messages. Fire and
-          // forget: history is a convenience and must never fail a run.
-          void snapshot(threadId);
+          save();
           subscriber.complete();
         },
       });
@@ -96,16 +109,30 @@ function firstUserText(messages: readonly { role: string; content?: unknown }[])
   return "";
 }
 
-async function snapshot(threadId: string): Promise<void> {
-  const state = await getThreadState(threadId);
-  if (state) saveSnapshot(threadId, snapshotFromLangGraph(state));
+async function snapshot(
+  threadId: string,
+  messages: unknown[] | undefined,
+  state: Record<string, unknown> | undefined,
+): Promise<void> {
+  if (messages) {
+    saveSnapshot(threadId, { messages, state: state ?? {} });
+    return;
+  }
+  // No snapshot came through (a run that failed early): fall back to the agent
+  // server's thread, which has the lead's messages only.
+  const live = await getThreadState(threadId);
+  if (live) saveSnapshot(threadId, snapshotFromLangGraph(live));
 }
 
+/**
+ * Reopening a thread this process no longer holds. The stored snapshot comes
+ * first — it is the only copy that includes subagent work. The agent server is
+ * still asked, for a pending approval to re-raise, and as the source when there
+ * is no snapshot yet.
+ */
 async function restore(threadId: string): Promise<BaseEvent[]> {
   const live = await getThreadState(threadId);
-  if (live?.values.messages?.length) {
-    return historyEvents(threadId, snapshotFromLangGraph(live), pendingInterruptsOf(live));
-  }
   const stored = getSnapshot(threadId);
-  return stored ? historyEvents(threadId, stored) : [];
+  const snap = stored ?? (live?.values.messages?.length ? snapshotFromLangGraph(live) : undefined);
+  return snap ? historyEvents(threadId, snap, pendingInterruptsOf(live)) : [];
 }

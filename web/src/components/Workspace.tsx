@@ -55,6 +55,7 @@ export function Workspace({ files }: { files: WorkspaceFile[] }) {
                     </span>
                     <span className="block text-[10.5px] text-wb-faint">
                       {file.lastTool}
+                      {file.bySubagent ? " · by a researcher" : ""}
                       {file.revisions > 1 ? ` · ${file.revisions} revisions` : ""}
                       {!file.content ? " · content not captured" : ""}
                     </span>
@@ -114,6 +115,13 @@ function extOf(path: string): string {
 function FileViewer({ file, onClose }: { file: WorkspaceFile; onClose: () => void }) {
   const isMarkdown = extOf(file.path) === "md";
   const [printing, setPrinting] = useState(false);
+
+  // The header says "Esc" — make the key do what the label promises.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // "Save as PDF" is the browser's own print-to-PDF: the report is rendered once
   // more into a print-only root outside the app (charts included, light theme),

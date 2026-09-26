@@ -29,6 +29,8 @@ export interface WorkspaceFile {
   /** Number of write/edit operations seen against this path. */
   revisions: number;
   lastTool: string;
+  /** Written by a subagent (e.g. a researcher's `/research/` notes), not the lead. */
+  bySubagent: boolean;
 }
 
 export interface Activity {
@@ -39,6 +41,8 @@ export interface Activity {
   status: "running" | "done";
   /** Result text, once the matching tool message arrives. */
   result?: string;
+  /** Run by a subagent inside a `task` delegation, not by the lead. */
+  bySubagent: boolean;
 }
 
 export interface ChartSeries {
@@ -212,7 +216,10 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
       }[];
       toolCallId?: string;
       content?: unknown;
+      /** Set by SubagentTracker on the server: this call ran inside a subagent. */
+      subagentRunId?: string | null;
     };
+    const bySubagent = typeof m.subagentRunId === "string";
 
     if (m.role === "assistant" && Array.isArray(m.toolCalls)) {
       for (const call of m.toolCalls) {
@@ -232,6 +239,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
                 tool === "write_file" ? str(args.content) ?? prev?.content : prev?.content,
               revisions: (prev?.revisions ?? 0) + 1,
               lastTool: tool,
+              bySubagent,
             });
           }
         }
@@ -248,6 +256,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
             tool,
             label: summarizeTool(tool, args) || tool,
             status: "running",
+            bySubagent,
           });
         }
       }
@@ -264,6 +273,16 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
   }
 
   return { files: [...files.values()], activity, charts: [...charts.values()] };
+}
+
+/** Tool calls made inside subagents — shown in the side panels, not the chat. */
+export function subagentToolCallIds(messages: readonly Message[]): Set<string> {
+  const ids = new Set<string>();
+  for (const msg of messages) {
+    const m = msg as Message & { subagentRunId?: string | null; toolCalls?: { id: string }[] };
+    if (typeof m.subagentRunId === "string") for (const c of m.toolCalls ?? []) ids.add(c.id);
+  }
+  return ids;
 }
 
 export function readTodos(state: unknown): Todo[] {

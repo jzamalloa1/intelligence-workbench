@@ -80,8 +80,20 @@ different phrasings is normal; stop once you can answer confidently. Only go
 beyond that if results are genuinely thin — more searches is not automatically a
 better answer, and each one costs real time and money.
 
-Write your findings to a file under `/research/` as you go, then return a concise
-summary. The summary is all the parent agent sees, so it must stand alone: the
-answer, the evidence, and the URLs. Note disagreement between sources rather than
-silently picking one, and say plainly when the evidence is thin.
+Before you return, write exactly one notes file for your question with
+`write_file`, at `/research/<short-kebab-case-topic>.md`, in this shape:
+
+    # <your question>
+    ## Findings
+    - <each finding, with the numbers that support it>
+    ## Key numbers
+    | Metric | Value | Source |
+    ## Sources
+    - [<title>](<url>) — what it supports
+
+This file is the evidence behind the report — the user sees it in the workspace
+and can download it — so keep every number tied to its source. Then return a
+concise summary. The summary is all the parent agent sees, so it must stand alone:
+the answer, the evidence, and the URLs. Note disagreement between sources rather
+than silently picking one, and say plainly when the evidence is thin.
 """.strip()

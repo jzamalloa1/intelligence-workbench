@@ -52,7 +52,7 @@ function ActivityRow({ item, last }: { item: Activity; last: boolean }) {
   const canExpand = Boolean(item.result);
 
   return (
-    <li className="relative flex gap-2.5 pl-1">
+    <li className={`relative flex gap-2.5 ${item.bySubagent ? "pl-5" : "pl-1"}`}>
       {/* Timeline rail */}
       <div className="flex flex-col items-center">
         <span
@@ -80,6 +80,14 @@ function ActivityRow({ item, last }: { item: Activity; last: boolean }) {
             <span className="min-w-0 flex-1 truncate text-[12px] text-wb-muted">
               {item.label}
             </span>
+            {item.bySubagent ? (
+              <span
+                className="shrink-0 rounded-full bg-wb-panel-alt px-1.5 text-[9.5px] uppercase tracking-wide text-wb-faint"
+                title="Run by a subagent inside a task delegation"
+              >
+                subagent
+              </span>
+            ) : null}
           </span>
         </button>
 

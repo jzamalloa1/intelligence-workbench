@@ -94,7 +94,7 @@ flowchart TD
     LEAD -->|"task"| SUB2["researcher subagent"]
     SUB1 -->|"research() ×2-3"| TAV["Tavily search\nmax_results=6"]
     SUB2 -->|"research() ×2-3"| TAV
-    SUB1 -->|"write_file"| RES["/research/*.md"]
+    SUB1 -->|"write_file — exactly one notes file"| RES["/research/topic.md\nfindings, key numbers, sources"]
     SUB2 -->|"write_file"| RES
     SUB1 -->|"summary only"| LEAD
     SUB2 -->|"summary only"| LEAD
@@ -341,21 +341,30 @@ sequenceDiagram
     R-->>B: 404 Not found — same answer as a thread that doesn't exist
 ```
 
-#### 4. Known gap — subagent work is shown live, then dropped
+#### 4. How subagent work is kept — it would otherwise vanish
+
+Each researcher writes exactly one `/research/<topic>.md` notes file (findings, key numbers,
+sources — the evidence behind the report) and runs its own searches. None of that is in the
+lead's LangGraph thread, because deepagents runs a subagent inline inside the lead's `task` call.
 
 ```mermaid
 flowchart LR
-    LEAD["Lead agent's messages<br/>write_todos, task, execute,<br/>render_chart, write_file"] -->|"saved in the LangGraph thread"| SNAP["MESSAGES_SNAPSHOT<br/>sent at each lead ↔ subagent switch<br/>and at the end of the run"]
-    SUB["Subagent tool calls<br/>research, write_file to /research/"] -->|"streamed live only —<br/>never saved in the thread"| UI["Browser"]
-    SNAP -->|"client keeps only messages<br/>present in the snapshot"| UI
-    UI --> GONE["Subagent searches and /research/ files<br/>disappear from Activity and Workspace<br/>at the next snapshot — and are never in history"]
+    ADAPTER["@ag-ui/langgraph<br/>streams subagent tool calls,<br/>then sends MESSAGES_SNAPSHOTs<br/>built from the lead's thread only"] --> TRACK["SubagentTracker<br/>in WorkbenchLangGraphAgent"]
+    TRACK -->|"tags each subagent call<br/>subagentRunId = its task"| OUT["Every snapshot gets the<br/>subagent calls re-inserted,<br/>right after their task call"]
+    OUT --> UI["Browser"]
+    OUT --> MEM["In-memory replay"]
+    OUT --> DB[("History snapshot")]
+    UI --> PANELS["Workspace: /research/ files, by a researcher<br/>Activity: searches, tagged subagent<br/>Chat: hidden — lead's messages only"]
+    UI -->|"next message"| STRIP["withoutSubagentMessages<br/>strips them from the input"]
+    STRIP --> LEADTHREAD["Lead's thread stays lead-only"]
 ```
 
-Subagents run inline inside the lead's `task` call, so their messages never enter the lead's
-thread. `@ag-ui/langgraph` streams their tool calls, but the message snapshots it also sends are
-built from the thread — and `@ag-ui/client` treats a snapshot as the full list, removing anything
-not in it. The files themselves still exist in the sandbox (the lead reads them back with
-`read_file`); only the view of them is lost. Not fixed yet — see ARCHITECTURE §4d.
+Without the tracker, `@ag-ui/client` — which treats a snapshot as the complete message list —
+erased subagent searches and files at the next snapshot, and they never reached history. The
+inbound strip matters just as much: the adapter sends every client message its thread doesn't
+hold as new input, so re-inserted subagent calls would otherwise be written into the lead's
+thread on the next turn. Verified on a recorded real run (55 researcher calls kept, next-turn
+input 135 → 25 messages) and with `web/scripts/verify-subagents.mjs` (zero API cost).
 
 - **Each conversation already has its own sandbox** — MDA scopes the sandbox per thread (the
   only scope it accepts), so "per-user folders" is really "per-user conversations": `/reports/`
@@ -400,6 +409,7 @@ thread.
 | `web/src/lib/downloads.ts` | Client-side downloads — report files, chart PNG/SVG/CSV; "Save as PDF" is the browser's print, via a print-only copy of the report |
 | `agent_core/approvals.py` | Plain-language approval text for `execute` — the `interrupt_on` description function |
 | `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — renders the plain-language description, emits `{decisions:[…]}` |
+| `web/src/lib/subagent-tracker.ts` | Keeps subagent tool calls through message snapshots (outbound) and out of the lead's thread (inbound) — see "How subagent work is kept" |
 | `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), for the `focus_panel` frontend tool |
 | `web/src/lib/users.ts`, `web/src/components/SessionGate.tsx` | Demo sign-in; owns the open conversation id (`?t=` in the URL) and hands it to `<CopilotKit threadId>` |
 | `web/src/lib/server/history-runner.ts`, `history-store.ts` | Per-user history: registers and snapshots conversations, restores them on reopen |
