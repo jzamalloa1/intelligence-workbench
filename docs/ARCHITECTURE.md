@@ -418,6 +418,30 @@ snapshotted from the agent server after every run — the agent server is read l
 has a thread, and the snapshot is the fallback. A deployed MDA agent has durable threads, so this
 is a local-dev concern only.
 
+**Subagent work is visible live, then silently dropped (2026-09-26, not fixed).** Asked why the
+Workspace showed `/reports/` but never `/research/`. Two separate facts, both verified:
+
+1. *That run's researchers wrote nothing.* The recorded stream (replayed from the Local runner)
+   had 55 `research` calls from the three researchers and zero `write_file`. They could have:
+   deepagents 0.7.19 gives every subagent `FilesystemMiddleware` regardless of its `tools` list.
+   The instruction to write to `/research/` "as you go" is soft, and the model skipped it. Nothing
+   in prompts or subagents changed since before Milestone 6.
+2. *When they do write, the view of it doesn't survive.* Subagents run inline inside the lead's
+   `task` call, so their messages never enter the lead's LangGraph thread. `@ag-ui/langgraph`
+   streams their tool calls, but it also sends a `MESSAGES_SNAPSHOT` — built from the thread — on
+   every lead/subagent switch and at the end of the run, and `@ag-ui/client`'s snapshot handler
+   keeps only messages whose ids are in the snapshot. So subagent searches vanish from the
+   Activity panel and subagent files from the Workspace at the next snapshot, and they are never
+   in the saved history. Evidence from the earlier JEV run: the lead `read_file`d four
+   `/research/` files the researchers had written; none survived in the Workspace. The files
+   themselves are intact in the sandbox.
+
+Candidate fix: `HistoryRunner` already sees every event, so it can collect the subagents' tool-call
+messages as they stream and re-insert them — after the `task` call that spawned them — into each
+`MESSAGES_SNAPSHOT` it passes through, and save that augmented list as the history snapshot. That
+also raises a UX choice: 50+ subagent searches per run are noise in the chat transcript, so they
+probably belong in the Activity panel only.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

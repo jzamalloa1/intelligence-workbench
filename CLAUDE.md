@@ -178,6 +178,9 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs` — run them after UI changes.
+- **Mermaid diagrams in docs must render**: `node scripts/render-mermaid.mjs ../README.md` parses
+  and draws every block with Mermaid 11 (GitHub's major). Use `<br/>` for line breaks in new
+  labels; no backticks or `;` inside labels/messages — both broke diagrams once.
 - Tool-call noise is filtered **on the frontend** in `useRenderToolCall`. The
   `copilotkit_customize_config(emit_tool_calls=[...])` approach from CopilotKit's showcase is
   FastAPI-path-specific and does not apply here.

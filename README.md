@@ -220,7 +220,7 @@ flowchart TD
         direction LR
         C1["render_chart(title, chart_type, categories, series[{name, values, unit}])"] --> C2["spec IS the argument —\ntiny JSON, not an image"]
         C2 --> C3["Artifact Canvas renders an\ninteractive chart from it"]
-        C2 --> C4["returns chart_id — a report's\n```chart <id>``` block embeds the same chart"]
+        C2 --> C4["returns chart_id — a chart block\nin a report embeds the same chart"]
     end
 ```
 
@@ -242,15 +242,120 @@ Demo sign-in: pick one of three users, no password (`web/src/lib/users.ts`). The
 httpOnly cookie that only the server reads. Real identity is Milestone 8 — MDA 0.8 supports
 Supabase logins directly via `auth.supabase(...)` in `identity.py`.
 
+#### 1. Who owns what
+
+Every box inside a user's area belongs to that user alone. The only thing all users share is
+the agent itself — and its memory.
+
+```mermaid
+flowchart TB
+    subgraph ALEX["Alex — cookie wb_user=alex"]
+        direction TB
+        A1["Conversation A1<br/>thread t-a1"] --> VA1["Sandbox VM for t-a1<br/>/research/  /reports/"]
+        A2["Conversation A2<br/>thread t-a2"] --> VA2["Sandbox VM for t-a2<br/>/research/  /reports/"]
+    end
+    subgraph SAM["Sam — cookie wb_user=sam"]
+        direction TB
+        S1["Conversation S1<br/>thread t-s1"] --> VS1["Sandbox VM for t-s1<br/>/research/  /reports/"]
+    end
+    subgraph SHARED["Shared by every user"]
+        direction TB
+        AG["The agent — one MDA deployment<br/>same instructions, tools, subagents"]
+        MEM[("/memories/agent/AGENTS.md<br/>agent memory — deployment-wide")]
+        AG <--> MEM
+    end
+    A1 & A2 & S1 -->|"each run"| AG
+```
+
+- A **sandbox belongs to a conversation, not to a user** — MDA scopes it per thread and accepts
+  no other scope. Alex's two conversations are two different machines; "Alex's files" means
+  "the files in Alex's conversations".
+- **Agent memory is the exception**: one `/memories/agent/` tree for every caller, so nothing
+  personal may go there (`memory.py`, `instructions.md`). MDA 0.8's per-user memory layer is
+  not enabled — it only mounts for verified identities (Milestone 8).
+
+#### 2. Where each piece lives, and what erases it
+
 ```mermaid
 flowchart LR
-    B["Browser\n(cookie: wb_user)"] --> R["route.ts\nreads cookie → stamps x-workbench-user\n(overwrites whatever the browser sent)\nrefuses another user's thread → 404"]
-    R --> H["HistoryRunner\n(InMemoryAgentRunner + history)"]
-    H -->|"run: register thread → owner, title"| DB[("web/.data/workbench.sqlite\nper-user index + snapshot")]
-    H -->|"run ends: snapshot"| DB
-    H --> A["WorkbenchLangGraphAgent → mda dev\nthread metadata.user_id stamped"]
-    H -->|"connect: memory → agent server → snapshot"| DB
+    subgraph BROWSER["Browser"]
+        URL["Open conversation id<br/>?t=… in the URL"]
+        PANELS["Chat, Plan, Workspace, Charts<br/>derived from messages — never stored"]
+    end
+    subgraph WEB["Web server — Next.js on :3000"]
+        MEMRUN["In-memory runner<br/>every streamed event of each run"]
+        DB[("web/.data/workbench.sqlite<br/>owner, title, snapshot per conversation")]
+    end
+    subgraph AGENT["Agent server — mda dev on :2024"]
+        LG[("LangGraph thread<br/>the lead agent's messages + state")]
+    end
+    subgraph REMOTE["LangSmith cloud"]
+        VM["Sandbox VM per thread<br/>files in /research/ and /reports/"]
+        HUB[("Context Hub<br/>agent memory")]
+    end
+    MEMRUN -->|"after each run: snapshot"| DB
+    LG -->|"read to build the snapshot"| DB
+    PANELS -.->|"rebuilt from"| MEMRUN
+    LG --> VM
+    LG --> HUB
 ```
+
+| Piece | Lives in | Erased by |
+|---|---|---|
+| Open conversation | Browser URL | nothing — it is just an id |
+| Streamed events of each run | Web server memory | restarting `npm run dev` |
+| **History (owner, title, snapshot)** | `web/.data/workbench.sqlite` | deleting the conversation, or the file |
+| The lead agent's thread | Agent server | locally: every `mda dev` restart or `mda build .` (see ARCHITECTURE §4d). Deployed: durable |
+| Files in `/research/`, `/reports/` | Sandbox VM | 10 idle minutes (`idle_ttl_seconds=600`) |
+| Agent memory | Context Hub | never by a deploy — only by editing it |
+
+Reports and charts outlive their sandbox because the Workspace and Charts panels are rebuilt from
+the saved *messages* (the `write_file` and `render_chart` arguments), not read from the VM.
+
+#### 3. One conversation, end to end — and another user trying to open it
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (Alex)
+    participant R as route.ts
+    participant H as HistoryRunner
+    participant DB as workbench.sqlite
+    participant A as Agent server
+    participant V as Sandbox for t-a1
+    B->>R: run t-a1 + message (cookie alex)
+    R->>R: user = alex, and t-a1 is unclaimed or Alex's → allow
+    R->>H: request + x-workbench-user: alex (browser's header overwritten)
+    H->>DB: register t-a1 → owner alex, title = first message
+    H->>A: stream the run (new thread gets metadata.user_id = alex)
+    A->>V: execute / write_file in this thread's VM
+    A-->>B: live events: chat, plan, files, charts
+    H->>A: run over → read thread state
+    H->>DB: save snapshot
+    Note over B,V: Later — Alex reopens A1 from the sidebar
+    B->>R: connect t-a1 (cookie alex)
+    R->>H: owner check passes
+    H-->>B: in-memory replay, else agent-server state, else the saved snapshot
+    Note over B,V: Sam asks for Alex's conversation (URL or API)
+    B->>R: connect t-a1 (cookie sam, even with a forged x-workbench-user)
+    R-->>B: 404 Not found — same answer as a thread that doesn't exist
+```
+
+#### 4. Known gap — subagent work is shown live, then dropped
+
+```mermaid
+flowchart LR
+    LEAD["Lead agent's messages<br/>write_todos, task, execute,<br/>render_chart, write_file"] -->|"saved in the LangGraph thread"| SNAP["MESSAGES_SNAPSHOT<br/>sent at each lead ↔ subagent switch<br/>and at the end of the run"]
+    SUB["Subagent tool calls<br/>research, write_file to /research/"] -->|"streamed live only —<br/>never saved in the thread"| UI["Browser"]
+    SNAP -->|"client keeps only messages<br/>present in the snapshot"| UI
+    UI --> GONE["Subagent searches and /research/ files<br/>disappear from Activity and Workspace<br/>at the next snapshot — and are never in history"]
+```
+
+Subagents run inline inside the lead's `task` call, so their messages never enter the lead's
+thread. `@ag-ui/langgraph` streams their tool calls, but the message snapshots it also sends are
+built from the thread — and `@ag-ui/client` treats a snapshot as the full list, removing anything
+not in it. The files themselves still exist in the sandbox (the lead reads them back with
+`read_file`); only the view of them is lost. Not fixed yet — see ARCHITECTURE §4d.
 
 - **Each conversation already has its own sandbox** — MDA scopes the sandbox per thread (the
   only scope it accepts), so "per-user folders" is really "per-user conversations": `/reports/`
