@@ -107,7 +107,7 @@ function Workbench() {
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);
   const usage = useMemo(() => summarize(readUsage(agent?.state)), [agent?.state]);
-  const { files, activity, charts, skills } = useMemo(
+  const { files, activity, charts, skills, memoryEdits } = useMemo(
     () => deriveFromMessages(messages),
     [messages],
   );
@@ -162,7 +162,7 @@ function Workbench() {
                 : "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
             }`}
           >
-            <Workspace files={files} />
+            <Workspace files={files} memoryEdits={memoryEdits} />
             <SandboxPanel activity={activity} charts={charts} />
           </div>
         </main>

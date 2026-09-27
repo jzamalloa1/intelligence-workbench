@@ -6,10 +6,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { basename, downloadText } from "@/lib/downloads";
-import { chartSlug, type WorkspaceFile } from "@/lib/workbench";
+import { chartSlug, type MemoryEdit, type WorkspaceFile } from "@/lib/workbench";
 import { useChartLibrary, useWorkbenchUI } from "@/lib/workbench-ui";
 import { ChipButton, DownloadIcon, ExpandIcon } from "./charts/ChartControls";
 import { ChartLegend, ChartPlot } from "./charts/ChartPlot";
+import { MemoryView } from "./MemoryView";
 import { EmptyState, Panel, Pill } from "./Panel";
 
 /**
@@ -18,7 +19,8 @@ import { EmptyState, Panel, Pill } from "./Panel";
  * Not read from agent state: with a sandbox attached the filesystem lives in the
  * remote VM and never lands in LangGraph state. See src/lib/workbench.ts.
  */
-export function Workspace({ files }: { files: WorkspaceFile[] }) {
+export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memoryEdits: MemoryEdit[] }) {
+  const [tab, setTab] = useState<"files" | "memory">("files");
   // Which file is open lives in WorkbenchUIContext (by path, not by object) so
   // the agent's `focus_panel` frontend tool can open one, and so the viewer
   // follows later revisions of the same path rather than a stale snapshot.
@@ -30,9 +32,20 @@ export function Workspace({ files }: { files: WorkspaceFile[] }) {
     <>
       <Panel
         title="Workspace"
-        badge={files.length > 0 ? <Pill>{files.length} files</Pill> : <Pill>virtual FS</Pill>}
+        badge={
+          <div className="flex items-center gap-1.5" role="tablist" aria-label="Workspace view">
+            <Tab active={tab === "files"} onClick={() => setTab("files")}>
+              Files{files.length ? ` ${files.length}` : ""}
+            </Tab>
+            <Tab active={tab === "memory"} onClick={() => setTab("memory")}>
+              Memory{memoryEdits.length ? ` · ${memoryEdits.length} new` : ""}
+            </Tab>
+          </div>
+        }
       >
-        {files.length === 0 ? (
+        {tab === "memory" ? (
+          <MemoryView edits={memoryEdits} />
+        ) : files.length === 0 ? (
           <EmptyState>
             Files the agent writes to{" "}
             <code className="text-wb-muted">/research/</code> and{" "}
@@ -82,6 +95,22 @@ export function Workspace({ files }: { files: WorkspaceFile[] }) {
         <FileViewer file={open} onClose={() => setOpen(null)} />
       ) : null}
     </>
+  );
+}
+
+function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+        active ? "bg-wb-accent-soft text-wb-accent" : "text-wb-faint hover:text-wb-muted"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -270,7 +299,7 @@ function chartIdOf(node: unknown): string | null {
  * Styles markdown with the app's own tokens rather than pulling in
  * @tailwindcss/typography — matches how every other panel is hand-styled.
  */
-const markdownComponents: Components = {
+export const markdownComponents: Components = {
   h1: (p) => <h1 className="mb-3 mt-1 text-[16px] font-semibold text-wb-text" {...p} />,
   h2: (p) => (
     <h2

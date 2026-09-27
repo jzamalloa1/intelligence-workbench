@@ -178,7 +178,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs` — run them after UI changes.
+  `verify-usage.mjs`, `verify-memory.mjs` — run them after UI changes.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
 - **Subagent messages never go back to the lead.** `SubagentTracker` re-inserts subagent tool

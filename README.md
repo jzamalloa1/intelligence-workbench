@@ -419,9 +419,19 @@ thread.
 
 ### Not wired yet
 
-No `schedules/`. Memory (`memory.py`) is active on the backend (the agent already reads and
-writes `/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there is no
-frontend Memory panel rendering it yet. Tracked in [Roadmap](#roadmap).
+No `schedules/` yet — tracked in [Roadmap](#roadmap).
+
+### Memory
+
+`memory.py` enables the deployment-wide agent layer: `/memories/agent/AGENTS.md` is loaded into
+every run for every user. The **Memory** tab on the Workspace panel shows what is stored now and
+what the open conversation changed (its `write_file` / `edit_file` calls on `/memories/`, which
+are kept out of the Files list), under a notice that memory is shared. Locally it reads
+`agent/.mda/__contexthub__/memories/agent/` — MDA's stand-in for LangSmith Context Hub, outside
+`.mda/build/`, so compiles don't erase it; for a deployed agent the tab shows only the
+conversation's changes. As of 2026-09-26 the agent has read memory but **never saved anything**
+(the file is empty) — earlier notes here claiming it writes memory overstated it. Verified with
+`web/scripts/verify-memory.mjs` (zero API cost).
 
 ### Skills
 
@@ -453,7 +463,7 @@ after adding one. Verified with one live two-call run: the agent opened
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
 | Summarization + context offload | Context Meter (header) — the lead's current context against its model's window, per-call growth chart, compactions counted |
 | Per-call token usage | Cost Meter (header) — estimated spend for the conversation, split by model and lead vs subagents, cache reads/writes priced at their own rates |
-| Durable memory (`AGENTS.md`) | Memory panel — what it carried across sessions |
+| Durable memory (`AGENTS.md`) | Memory tab (Workspace panel) — what is stored, what this conversation changed, and that it is shared |
 | Managed schedules (cron) | Daily Brief card |
 
 **CopilotKit**

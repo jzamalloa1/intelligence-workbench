@@ -195,6 +195,20 @@ function parseChart(id: string, args: Record<string, unknown>): Chart | undefine
   };
 }
 
+/** A change the agent made to its durable memory in this conversation. */
+export interface MemoryEdit {
+  id: string;
+  path: string;
+  tool: "write_file" | "edit_file";
+  /** write_file: the new content. edit_file: the replacement text. */
+  content?: string;
+  /** edit_file only: the text it replaced. */
+  replaced?: string;
+}
+
+/** Where MDA mounts agent memory — not a deliverable, so not a Workspace file. */
+export const MEMORY_PREFIX = "/memories/";
+
 export interface SkillUse {
   name: string;
   /** How many times the agent opened the skill's files. */
@@ -210,6 +224,8 @@ export interface Derived {
   charts: Chart[];
   /** Skills the agent loaded in this conversation, in first-use order. */
   skills: SkillUse[];
+  /** Writes to /memories/ in this conversation, in order. */
+  memoryEdits: MemoryEdit[];
 }
 
 export function deriveFromMessages(messages: readonly Message[]): Derived {
@@ -217,6 +233,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
   const activity: Activity[] = [];
   const charts = new Map<string, Chart>();
   const skills = new Map<string, SkillUse>();
+  const memoryEdits: MemoryEdit[] = [];
   // toolCallId -> index in `activity`, so results can be attached on arrival.
   const pending = new Map<string, number>();
 
@@ -239,7 +256,15 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
         if (!tool) continue;
         const args = parseArgs(call.function?.arguments);
 
-        if (FILE_WRITE_TOOLS.has(tool)) {
+        if (FILE_WRITE_TOOLS.has(tool) && str(args.file_path)?.startsWith(MEMORY_PREFIX)) {
+          memoryEdits.push({
+            id: call.id,
+            path: str(args.file_path) as string,
+            tool: tool as MemoryEdit["tool"],
+            content: tool === "write_file" ? str(args.content) : str(args.new_string),
+            replaced: tool === "edit_file" ? str(args.old_string) : undefined,
+          });
+        } else if (FILE_WRITE_TOOLS.has(tool)) {
           const path = str(args.file_path);
           if (path) {
             const prev = files.get(path);
@@ -289,7 +314,13 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
     }
   }
 
-  return { files: [...files.values()], activity, charts: [...charts.values()], skills: [...skills.values()] };
+  return {
+    files: [...files.values()],
+    activity,
+    charts: [...charts.values()],
+    skills: [...skills.values()],
+    memoryEdits,
+  };
 }
 
 /** Tool calls made inside subagents — shown in the side panels, not the chat. */
