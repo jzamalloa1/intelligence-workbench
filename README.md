@@ -180,6 +180,14 @@ resume payload for all three decisions.
 raises on a count mismatch. Decision shapes: `{type:"approve"}`,
 `{type:"reject", message?}`, `{type:"edit", edited_action:{name, args}}`.
 
+**Several approvals at once.** Researchers inherit the lead's `interrupt_on` (deepagents'
+default), so two researchers running in parallel can each pause on their own `execute`, which
+leaves two interrupts pending. LangGraph refuses a bare resume in that case ("you must specify
+the interrupt id"). The card shows one approval at a time. `WorkbenchLangGraphAgent.prepareStream`
+looks up the thread's pending interrupts and sends the decision as `{interrupt_id: decision}`
+for the one the card showed (`web/src/lib/interrupt-resume.ts`). The others stay pending, and
+their cards follow one by one.
+
 > **Use `useInterrupt`, not `useHumanInTheLoop`.** They sound interchangeable and are not:
 > `useHumanInTheLoop` registers a *frontend tool* whose handler happens to be a human, while
 > `interrupt_on` uses LangGraph's interrupt mechanism. The giveaway is in the types —

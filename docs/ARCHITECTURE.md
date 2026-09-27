@@ -673,6 +673,22 @@ a leftover from the uv 0.8.22 stale-index era (§6 above), which uv now warns ab
 command. `cpython-3.14.7` is available via `uv python install 3.14`. Docs elsewhere that say
 "Python 3.14 (latest stable)" are, strictly, describing an RC.
 
+**Multiple pending interrupts (2026-09-27).** Subagents inherit the lead's `interrupt_on`, so
+parallel researchers can each pause on `execute`, which leaves N interrupts pending on one thread.
+Three layers each assume there is only one:
+- CopilotKit's `useInterrupt` legacy path keeps only the last `on_interrupt` event.
+- It resumes with a bare `forwardedProps.command.resume`.
+- LangGraph then raises `RuntimeError: When there are multiple pending interrupts, you must
+  specify the interrupt id when resuming`.
+
+The adapter's native multi-interrupt path (`RunAgentInput.resume[]`) wraps the answers as
+`{"__agui_resume_map__": …}`, which only the Python `ag_ui_langgraph` server unwraps. A plain
+LangGraph server (MDA) would not understand it. Fix: `WorkbenchLangGraphAgent.prepareStream`
+reads the thread's pending interrupts and rewrites the resume as `{interrupt_id: decision}`,
+matching the card's event value (`web/src/lib/interrupt-resume.ts`). The other interrupts stay
+pending and surface one card at a time. Found when Tavily's plan cap made two researchers fall
+back to `curl` in the sandbox.
+
 ---
 
 ## 7. MDA constraints that shape the design

@@ -1,6 +1,7 @@
 import { EventType, type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
 import { Observable } from "rxjs";
+import { addressResume, type PendingInterrupt } from "./interrupt-resume";
 import { SubagentTracker, withoutSubagentMessages } from "./subagent-tracker";
 import { takeUsageFromInput, UsageTracker } from "./usage-tracker";
 import { USER_HEADER } from "./users";
@@ -73,6 +74,29 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
       ...payload,
       metadata: { ...(payload?.metadata ?? {}), ...(userId ? { user_id: userId } : {}) },
     });
+  }
+
+  /**
+   * An approval decision arrives as a bare `forwardedProps.command.resume`,
+   * which LangGraph refuses while several interrupts are pending (parallel
+   * researchers each pausing on `execute`). Address it to the interrupt the
+   * card showed — see interrupt-resume.ts.
+   */
+  override async prepareStream(...args: Parameters<LangGraphAgent["prepareStream"]>) {
+    const [input, streamMode] = args;
+    const command = input.forwardedProps?.command;
+    if (command?.resume !== undefined && !input.resume?.length && input.threadId) {
+      const state = await this.client.threads.getState(input.threadId).catch(() => undefined);
+      const pending = (state?.tasks ?? []).flatMap((t) => t.interrupts ?? []) as PendingInterrupt[];
+      const resume = addressResume(command.resume, command.interruptEvent, pending);
+      if (resume !== command.resume) {
+        return super.prepareStream(
+          { ...input, forwardedProps: { ...input.forwardedProps, command: { ...command, resume } } },
+          streamMode,
+        );
+      }
+    }
+    return super.prepareStream(input, streamMode);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches the base signature
