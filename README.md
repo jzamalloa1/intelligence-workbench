@@ -119,9 +119,10 @@ Every model call above — lead **and** subagents — passes through the same mi
 |---|---|---|---|
 | 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
 | 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
-| 3 | `ProviderPromptMiddleware()` | Appends the active provider's prompt delta (`agent_core/prompts.py`) | Must run *after* anything else that contributes to the system prompt, so its addition is the final one. Runs per model call, so it reaches subagents too |
-| 4 | `FriendlyErrorMiddleware()` | Catches provider failures, returns a readable `AIMessage` instead of aborting | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
-| 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | Outermost — the last line of defense regardless of what happened above |
+| 3 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | Must run *after* anything else that contributes to the system prompt, so its addition is the final one. Subagents don't inherit it — the researcher's spec lists it too |
+| 4 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
+| 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
+| 6 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost, next to the model, so Friendly errors still wraps a failure on the swapped provider. The researcher has its own instance (`"worker"`, non-streaming) |
 
 ### The subagent math
 
@@ -235,6 +236,28 @@ This is also why the chart tool takes small structured numbers rather than an im
 image would have to be base64-encoded into a `write_file` argument to be visible at all, which
 means the model generates tens of thousands of output tokens for something that's really a
 handful of numbers — the same visibility rule, just paid for the expensive way.
+
+### Provider toggle — Anthropic or OpenAI, per conversation
+
+The header's **Anthropic | OpenAI** switch picks the provider for a conversation. The agent is
+defined once; each request carries `x-llm-provider`, which CopilotKit's adapter forwards into the
+run's config and deepagents passes on to subagents. `ProviderSwitchMiddleware` swaps the model
+per call to the same *role* from that provider's profile (`agent_core/models.py`), and the prompt
+delta follows. When switching away from Anthropic it also strips the three prompt-cache marks
+deepagents' Anthropic caching middleware added (model settings, system block, last tool) — that
+middleware runs outside ours and only ever saw the Anthropic model.
+
+A conversation **keeps the provider it started on**: the history store records it at the first
+run and `route.ts` enforces it on every later request, because provider-specific history (e.g.
+Anthropic thinking blocks) doesn't carry across. So switching starts a new conversation — ask the
+same question on both, and compare them in the sidebar (OpenAI conversations carry a badge) with
+the Cost meter. `LLM_PROVIDER` in `.env` is only the default when no header is sent.
+
+Verified: offline (both roles, case-insensitive header, bogus value falls back, cache marks
+stripped), `web/scripts/verify-provider.mjs` (zero API cost), and live — an OpenAI conversation
+reached OpenAI's Responses API, which answered "You have no credits remaining"; that is the
+account, not the code. That same run found `FriendlyErrorMiddleware` letting mid-stream SDK errors
+through (a blank reply) and naming the `.env` provider instead of the run's — both fixed.
 
 ### Users and history — who owns what
 
@@ -392,7 +415,8 @@ thread.
 | File | Role |
 |---|---|
 | `agent.py` | Assembles model, tools, subagents, and middleware order. The only place that matters for *sequencing* |
-| `agent_core/models.py` | Model selection by role (`lead`/`worker`/`cheap`) and provider — the only place model IDs appear |
+| `agent_core/models.py` | Model selection by role (`lead`/`worker`/`cheap`) and provider — the only place model IDs appear. `run_provider()` reads the conversation's provider from the run's forwarded headers |
+| `middleware/provider_switch.py` | Per-call model swap to the conversation's provider — see § Provider toggle |
 | `agent_core/prompts.py` | `RESEARCHER` subagent prompt; per-provider `PROVIDER_DELTA` |
 | `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
 | `instructions.md` | The lead agent's system prompt — synced to Context Hub by MDA, not settable in `agent.py` |
@@ -525,7 +549,7 @@ Open <http://localhost:3000>.
 - [x] **4** — Live panels: Plan Board, Workspace, Activity Timeline
 - [x] **5** — Sandbox execution + charts + Artifact Canvas
 - [x] **6** — Human-in-the-loop approvals, frontend tools
-- [ ] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
+- [x] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
 - [ ] **9** — Design pass, screenshots, v0.1.0
 

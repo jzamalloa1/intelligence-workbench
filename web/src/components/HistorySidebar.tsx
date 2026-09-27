@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRunnerMode } from "@/lib/runner-mode";
 import { useSession } from "@/lib/session-client";
+import type { Provider } from "@/lib/users";
 
 interface ThreadSummary {
   id: string;
   title: string;
+  provider: Provider;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,7 +63,7 @@ export function HistorySidebar() {
       <div className="shrink-0 p-2">
         <button
           type="button"
-          onClick={newThread}
+          onClick={() => newThread()}
           className="flex w-full items-center gap-2 rounded-lg border border-wb-border px-3 py-2 text-[12.5px] font-medium text-wb-text transition-colors hover:border-wb-border-strong hover:bg-wb-panel-alt"
         >
           <PlusIcon /> New conversation
@@ -97,7 +99,7 @@ export function HistorySidebar() {
                     key={t.id}
                     thread={t}
                     active={t.id === threadId}
-                    onOpen={() => openThread(t.id)}
+                    onOpen={() => openThread(t.id, t.provider)}
                     onChanged={(deleted) => {
                       if (deleted && t.id === threadId) newThread();
                       refreshHistory();
@@ -191,6 +193,11 @@ function ThreadRow({
           active ? "bg-wb-accent-soft text-wb-accent" : "text-wb-text hover:bg-wb-panel-alt"
         }`}
       >
+        {thread.provider === "openai" ? (
+          <span className="mr-1.5 rounded bg-wb-panel-alt px-1 py-px align-[1px] text-[9.5px] font-medium uppercase tracking-wide text-wb-muted">
+            OpenAI
+          </span>
+        ) : null}
         {thread.title}
       </button>
       <span className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/thread:opacity-100">

@@ -15,6 +15,8 @@ from typing import Any
 
 from agent_core.models import build_model
 from agent_core.prompts import RESEARCHER
+from middleware.provider_prompt import ProviderPromptMiddleware
+from middleware.provider_switch import ProviderSwitchMiddleware
 from tools.research import research
 
 
@@ -39,5 +41,12 @@ def build_subagents() -> list[dict[str, Any]]:
             # Non-streaming: see build_model() — inline subagent token
             # events otherwise splice into the parent transcript.
             "model": build_model("worker", stream=False),
+            # Subagents don't inherit the lead's middleware. These two make the
+            # researcher follow the conversation's provider (x-llm-provider)
+            # and get that provider's prompt steering, like the lead does.
+            "middleware": [
+                ProviderPromptMiddleware(),
+                ProviderSwitchMiddleware("worker", stream=False),
+            ],
         },
     ]

@@ -6,7 +6,11 @@ at run time, and ``system_prompt`` is on the forbidden-fields list for
 ``define_deep_agent``. Composing a per-provider prompt therefore has to happen at
 model-call time, which is exactly what ``wrap_model_call`` is for.
 
-Bonus: because it runs per model call, it also reaches subagents.
+Subagents don't inherit the lead's middleware (deepagents builds a
+non-forked subagent's stack from its own spec), so the researcher's spec lists
+this middleware too — see ``agent_core/subagents.py``. The provider comes from
+the run (``run_provider``), so the web app's per-conversation toggle picks the
+matching delta.
 
 Both the sync and async hooks are implemented. The async one is not optional —
 the LangGraph server runs graphs asynchronously, so a middleware defining only

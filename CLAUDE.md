@@ -74,7 +74,10 @@ sync unit test. Always implement `awrap_model_call` alongside it and share the l
 
 MDA loads the project `.env` and it **overrides** exported shell variables, so
 `LLM_PROVIDER=openai mda dev .` does nothing. To switch providers, edit `.env` and restart.
-(The in-app toggle will use runtime context instead — see ARCHITECTURE §5.)
+That is only the *default* now: the header's provider toggle sends `x-llm-provider` per
+conversation and `ProviderSwitchMiddleware` swaps models per call (README § Provider toggle).
+Anything that names "the provider" at run time must use `run_provider()`, never
+`active_provider()` — the latter is the `.env` default, and was wrong in the error messages.
 
 ### Environment gotcha
 
@@ -178,7 +181,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs` — run them after UI changes.
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs` — run them after UI changes.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
 - **Subagent messages never go back to the lead.** `SubagentTracker` re-inserts subagent tool
@@ -228,6 +231,6 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - [x] **4** — Live panels: Plan Board, Workspace, Activity Timeline
 - [x] **5** — Sandbox execution + charts + Artifact Canvas
 - [x] **6** — Human-in-the-loop approvals, frontend tools
-- [ ] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
+- [x] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ OpenAI verified up to the API (it answered "no credits remaining") — not a completed OpenAI run
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
 - [ ] **9** — Design pass, screenshots, v0.1.0

@@ -39,3 +39,13 @@ export function initials(name: string): string {
     .slice(0, 2)
     .toUpperCase();
 }
+
+/** Header naming the conversation's model provider; the agent swaps models on it. */
+export const PROVIDER_HEADER = "x-llm-provider";
+export const PROVIDERS = ["anthropic", "openai"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+export function asProvider(value: string | null | undefined): Provider | undefined {
+  const v = value?.trim().toLowerCase();
+  return (PROVIDERS as readonly string[]).includes(v ?? "") ? (v as Provider) : undefined;
+}

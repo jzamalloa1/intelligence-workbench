@@ -23,6 +23,8 @@ import { DatabaseSync } from "node:sqlite";
 export interface ThreadSummary {
   id: string;
   title: string;
+  /** The model provider this conversation runs on — fixed at its first run. */
+  provider: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -35,11 +37,16 @@ export interface ThreadSnapshot {
 const DB_PATH = process.env.WORKBENCH_HISTORY_DB ?? path.join(process.cwd(), ".data", "workbench.sqlite");
 const MAX_TITLE = 80;
 
-// One connection per server process, surviving Next's dev hot reloads.
-const globalForDb = globalThis as unknown as { __workbenchHistory?: DatabaseSync };
+// One connection per server process, surviving Next's dev hot reloads. The
+// schema version rides along so a hot reload that adds a migration still runs
+// it on the already-open connection.
+const SCHEMA_VERSION = 2;
+const globalForDb = globalThis as unknown as { __workbenchHistory?: DatabaseSync; __workbenchHistoryVersion?: number };
 
 function db(): DatabaseSync {
-  if (!globalForDb.__workbenchHistory) {
+  const existing = globalForDb.__workbenchHistory;
+  if (existing && globalForDb.__workbenchHistoryVersion === SCHEMA_VERSION) return existing;
+  if (!existing) {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     const conn = new DatabaseSync(DB_PATH);
     conn.exec(`
@@ -57,13 +64,27 @@ function db(): DatabaseSync {
     `);
     globalForDb.__workbenchHistory = conn;
   }
-  return globalForDb.__workbenchHistory;
+  const conn = globalForDb.__workbenchHistory as DatabaseSync;
+  // v2 — the provider toggle. Older rows ran on the default.
+  const columns = conn.prepare("PRAGMA table_info(threads)").all() as { name: string }[];
+  if (!columns.some((c) => c.name === "provider")) {
+    conn.exec("ALTER TABLE threads ADD COLUMN provider TEXT NOT NULL DEFAULT 'anthropic'");
+  }
+  globalForDb.__workbenchHistoryVersion = SCHEMA_VERSION;
+  return conn;
 }
 
 export function titleFrom(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   if (!oneLine) return "New conversation";
   return oneLine.length <= MAX_TITLE ? oneLine : `${oneLine.slice(0, MAX_TITLE - 1).trimEnd()}…`;
+}
+
+export function providerOf(threadId: string): string | undefined {
+  const row = db().prepare("SELECT provider FROM threads WHERE id = ?").get(threadId) as
+    | { provider: string }
+    | undefined;
+  return row?.provider;
 }
 
 export function ownerOf(threadId: string): string | undefined {
@@ -74,14 +95,14 @@ export function ownerOf(threadId: string): string | undefined {
 }
 
 /** Registers a thread on its first run, or bumps its timestamp on later ones. */
-export function touchThread(threadId: string, userId: string, title: string) {
+export function touchThread(threadId: string, userId: string, title: string, provider: string) {
   const now = Date.now();
   db()
     .prepare(
-      `INSERT INTO threads (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO threads (id, user_id, title, created_at, updated_at, provider) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
     )
-    .run(threadId, userId, titleFrom(title), now, now);
+    .run(threadId, userId, titleFrom(title), now, now, provider);
 }
 
 export function saveSnapshot(threadId: string, snapshot: ThreadSnapshot) {
@@ -101,11 +122,17 @@ export function getSnapshot(threadId: string): ThreadSnapshot | undefined {
 export function listThreads(userId: string, limit = 100): ThreadSummary[] {
   const rows = db()
     .prepare(
-      `SELECT id, title, created_at, updated_at FROM threads
+      `SELECT id, title, provider, created_at, updated_at FROM threads
        WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?`,
     )
-    .all(userId, limit) as { id: string; title: string; created_at: number; updated_at: number }[];
-  return rows.map((r) => ({ id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at }));
+    .all(userId, limit) as { id: string; title: string; provider: string; created_at: number; updated_at: number }[];
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    provider: r.provider,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
 }
 
 export function renameThread(threadId: string, title: string) {

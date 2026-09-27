@@ -24,7 +24,8 @@ import {
 } from "@copilotkit/runtime/v2";
 import { HistoryRunner } from "@/lib/server/history-runner";
 import { currentUser, json, mayAccess } from "@/lib/server/session";
-import { USER_HEADER } from "@/lib/users";
+import { asProvider, PROVIDER_HEADER, USER_HEADER } from "@/lib/users";
+import { providerOf } from "@/lib/server/history-store";
 import { WorkbenchLangGraphAgent } from "@/lib/workbench-agent";
 
 /** Must match `define_deep_agent(name=...)` — MDA registers it as the graph id. */
@@ -133,6 +134,15 @@ async function withUser(request: Request): Promise<Response | Request> {
   const headers = new Headers(request.headers);
   headers.delete(USER_HEADER);
   if (user) headers.set(USER_HEADER, user.id);
+
+  // A conversation keeps the provider it started on: once it has a record, the
+  // stored provider wins over whatever the browser sends (mixing providers in
+  // one thread risks history the other side can't read, e.g. thinking blocks).
+  const threadId = call && call[1] !== "stop" ? threadIdOf(body) : undefined;
+  const stored = threadId ? asProvider(providerOf(threadId)) : undefined;
+  const provider = stored ?? asProvider(request.headers.get(PROVIDER_HEADER));
+  headers.delete(PROVIDER_HEADER);
+  if (provider) headers.set(PROVIDER_HEADER, provider);
   return new Request(request.url, { method: request.method, headers, body, signal: request.signal });
 }
 

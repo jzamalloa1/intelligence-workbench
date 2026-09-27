@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal
 
 from langchain_anthropic import ChatAnthropic
@@ -73,8 +74,41 @@ def active_profile() -> ModelProfile:
     return PROFILES[active_provider()]
 
 
-def _tier(role: Role) -> Tier:
-    profile = active_profile()
+#: Request header the web app sets per conversation. CopilotKit's LangGraph
+#: adapter forwards `x-` headers into every run's config as
+#: `configurable.copilotkit_forwarded_headers`, and deepagents passes the
+#: parent's configurable on to subagents — so one header reaches every call.
+PROVIDER_HEADER = "x-llm-provider"
+
+
+def run_provider() -> Provider:
+    """The provider for the current run: the header if valid, else ``LLM_PROVIDER``.
+
+    Only meaningful inside a running graph (it reads the run's config); anywhere
+    else it falls back to the environment default.
+    """
+    try:
+        from langgraph.config import get_config  # noqa: PLC0415
+
+        configurable = get_config().get("configurable") or {}
+    except RuntimeError:
+        return active_provider()
+    headers = configurable.get("copilotkit_forwarded_headers") or {}
+    raw = next((v for k, v in headers.items() if k.lower() == PROVIDER_HEADER), None)
+    value = str(raw or "").strip().lower()
+    return value if value in PROFILES else active_provider()  # type: ignore[return-value]
+
+
+def provider_of(model: object) -> Provider | None:
+    if isinstance(model, ChatAnthropic):
+        return "anthropic"
+    if isinstance(model, ChatOpenAI):
+        return "openai"
+    return None
+
+
+def _tier(role: Role, provider: Provider | None = None) -> Tier:
+    profile = PROFILES[provider] if provider else active_profile()
     # LLM_TIER_OVERRIDE collapses every role onto one tier. Useful for cost
     # experiments ("what if everything ran on cheap?") without editing code.
     override = (os.environ.get("LLM_TIER_OVERRIDE") or "").strip().lower()
@@ -82,7 +116,7 @@ def _tier(role: Role) -> Tier:
     return getattr(profile, effective)
 
 
-def build_model(role: Role, *, stream: bool = True) -> BaseChatModel:
+def build_model(role: Role, *, stream: bool = True, provider: Provider | None = None) -> BaseChatModel:
     """Return a configured chat model for ``role`` on the active provider.
 
     Returns an *instance* rather than a ``provider:model`` string because the
@@ -96,8 +130,8 @@ def build_model(role: Role, *, stream: bool = True) -> BaseChatModel:
     interleaved gibberish. Non-streaming subagents still work exactly the same;
     they just return their result in one piece instead of token by token.
     """
-    profile = active_profile()
-    tier = _tier(role)
+    profile = PROFILES[provider] if provider else active_profile()
+    tier = _tier(role, profile.provider)
 
     if profile.provider == "anthropic":
         return ChatAnthropic(model=tier.model, disable_streaming=not stream)
@@ -112,6 +146,12 @@ def build_model(role: Role, *, stream: bool = True) -> BaseChatModel:
     if tier.effort:
         kwargs["reasoning"] = {"effort": tier.effort}
     return ChatOpenAI(**kwargs)
+
+
+@lru_cache(maxsize=None)
+def model_for(provider: Provider, role: Role, stream: bool) -> BaseChatModel:
+    """``build_model`` memoised — the switching middleware asks for these per call."""
+    return build_model(role, stream=stream, provider=provider)
 
 
 def describe() -> str:

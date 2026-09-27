@@ -28,9 +28,29 @@ from langchain_core.exceptions import (
 from langchain_core.messages import AIMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
-from agent_core.models import active_provider
+from agent_core.models import run_provider
 
 logger = logging.getLogger(__name__)
+
+# LangChain's shared exception classes cover errors raised when a request is
+# made. An error that arrives *inside* an accepted stream (OpenAI's "You have
+# no credits remaining", for one) surfaces as the SDK's own `APIError`
+# instead — not a `ModelAPIError` subclass — so both SDKs' bases are caught too.
+_PROVIDER_ERRORS: tuple[type[Exception], ...] = (ModelAPIError,)
+try:
+    import openai
+
+    _PROVIDER_ERRORS += (openai.APIError,)
+except ImportError:  # pragma: no cover - both SDKs are project dependencies
+    pass
+try:
+    import anthropic
+
+    _PROVIDER_ERRORS += (anthropic.APIError,)
+except ImportError:  # pragma: no cover
+    pass
+
+_NAMES = {"anthropic": "Anthropic", "openai": "OpenAI"}
 
 _BILLING_HINTS = {
     "anthropic": "https://console.anthropic.com/settings/billing",
@@ -40,37 +60,41 @@ _BILLING_HINTS = {
 
 def _explain(exc: Exception) -> str:
     """A short, actionable description of a provider failure."""
-    provider = active_provider()
+    # The run's provider, not the .env default — with the per-conversation
+    # toggle they differ, and naming the wrong one sends people to the wrong
+    # billing page.
+    provider = run_provider()
+    other = "OpenAI" if provider == "anthropic" else "Anthropic"
     billing = _BILLING_HINTS.get(provider, "your provider's billing page")
     raw = str(exc)
     low = raw.lower()
 
     # Billing exhaustion is by far the most common cause and the least obvious
     # from the generic error, so it gets its own branch.
-    if "credit balance" in low or "insufficient_quota" in low or "billing" in low:
+    if any(h in low for h in ("credit balance", "insufficient_quota", "no credits", "billing")):
         return (
-            f"**{provider.title()} is out of credits.** The API rejected the request "
-            f"because the account balance is too low.\n\n"
-            f"Add credits at {billing}, or switch providers by setting "
-            f"`LLM_PROVIDER` in `.env` and restarting `mda dev`."
+            f"**{_NAMES.get(provider, provider)} is out of credits.** The API rejected the "
+            f"request because the account balance is too low.\n\n"
+            f"Add credits at {billing}, or start a new conversation on {other} with the "
+            f"provider switch in the header."
         )
 
     if isinstance(exc, ModelAuthenticationError):
         return (
-            f"**{provider.title()} rejected the API key.** Check the key in `.env` "
+            f"**{_NAMES.get(provider, provider)} rejected the API key.** Check the key in `.env` "
             f"and restart `mda dev` — the agent reads it at startup."
         )
 
     if isinstance(exc, ModelRateLimitError):
         return (
-            f"**{provider.title()} rate limit hit.** Wait and retry, or lower the "
+            f"**{_NAMES.get(provider, provider)} rate limit hit.** Wait and retry, or lower the "
             f"fan-out (fewer parallel subagents) for this request."
         )
 
     if isinstance(exc, ModelInvalidRequestError):
-        return f"**{provider.title()} rejected the request.**\n\n```\n{raw[:600]}\n```"
+        return f"**{_NAMES.get(provider, provider)} rejected the request.**\n\n```\n{raw[:600]}\n```"
 
-    return f"**{provider.title()} call failed.**\n\n```\n{raw[:600]}\n```"
+    return f"**{_NAMES.get(provider, provider)} call failed.**\n\n```\n{raw[:600]}\n```"
 
 
 class FriendlyErrorMiddleware(AgentMiddleware):
@@ -91,7 +115,7 @@ class FriendlyErrorMiddleware(AgentMiddleware):
     ) -> ModelResponse | AIMessage:
         try:
             return handler(request)
-        except ModelAPIError as exc:
+        except _PROVIDER_ERRORS as exc:
             return self._message(exc)
 
     async def awrap_model_call(
@@ -101,5 +125,5 @@ class FriendlyErrorMiddleware(AgentMiddleware):
     ) -> ModelResponse | AIMessage:
         try:
             return await handler(request)
-        except ModelAPIError as exc:
+        except _PROVIDER_ERRORS as exc:
             return self._message(exc)

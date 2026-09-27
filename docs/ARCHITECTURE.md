@@ -483,6 +483,14 @@ Verified by hand on two records and with `web/scripts/verify-usage.mjs`.
 
 ## 5. Provider-agnostic model layer
 
+> **Update (Milestone 7): the provider is per conversation now.** `LLM_PROVIDER` is the default;
+> the web app's toggle sends `x-llm-provider`, which the CopilotKit adapter forwards into
+> `configurable.copilotkit_forwarded_headers` and deepagents merges into each subagent's config.
+> `ProviderSwitchMiddleware` (lead and researcher) swaps the model per call and strips Anthropic
+> prompt-cache marks when switching away; `run_provider()` is the single source for "which
+> provider is this run on". No `context_schema` was needed. A conversation keeps its first
+> provider (enforced in `route.ts`). See README § Provider toggle.
+
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports
 this: `define_deep_agent(model=...)` accepts a constructed chat-model instance, and each
 subagent takes its own `model` override.

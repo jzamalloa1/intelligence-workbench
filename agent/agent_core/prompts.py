@@ -18,7 +18,7 @@ The delta is therefore applied at model-call time by ProviderPromptMiddleware.
 
 from __future__ import annotations
 
-from agent_core.models import active_provider
+from agent_core.models import run_provider
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-provider delta, appended to whatever system prompt is in play.
@@ -60,7 +60,7 @@ PROVIDER_DELTA: dict[str, str] = {
 
 def provider_delta() -> str:
     """The steering block for the active provider."""
-    return PROVIDER_DELTA[active_provider()]
+    return PROVIDER_DELTA[run_provider()]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

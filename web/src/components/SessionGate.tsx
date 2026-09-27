@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SessionContext } from "@/lib/session-client";
-import { initials, type DemoUser } from "@/lib/users";
+import { asProvider, initials, type DemoUser, type Provider } from "@/lib/users";
 import { AgentProvider } from "./AgentProvider";
 
 type Status =
@@ -15,9 +15,12 @@ function threadFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("t");
 }
 
-function writeThreadToUrl(id: string) {
+function writeThreadToUrl(id: string, provider: Provider) {
   const url = new URL(window.location.href);
   url.searchParams.set("t", id);
+  // Only the non-default provider is spelled out, to keep URLs short.
+  if (provider === "anthropic") url.searchParams.delete("p");
+  else url.searchParams.set("p", provider);
   window.history.replaceState(null, "", url);
 }
 
@@ -34,6 +37,7 @@ export function SessionGate({
 }) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [provider, setProvider] = useState<Provider>("anthropic");
   const [historyVersion, setHistoryVersion] = useState(0);
 
   useEffect(() => {
@@ -44,6 +48,7 @@ export function SessionGate({
         if (cancelled) return;
         setStatus(data.user ? { kind: "signed-in", user: data.user } : { kind: "signed-out", users: data.users });
         setThreadId(threadFromUrl() ?? crypto.randomUUID());
+        setProvider(asProvider(new URLSearchParams(window.location.search).get("p")) ?? "anthropic");
       })
       .catch(() => !cancelled && setStatus({ kind: "signed-out", users: [] }));
     return () => {
@@ -52,8 +57,8 @@ export function SessionGate({
   }, []);
 
   useEffect(() => {
-    if (threadId && status.kind === "signed-in") writeThreadToUrl(threadId);
-  }, [threadId, status.kind]);
+    if (threadId && status.kind === "signed-in") writeThreadToUrl(threadId, provider);
+  }, [threadId, provider, status.kind]);
 
   const signIn = useCallback(async (userId: string) => {
     const res = await fetch("/api/session", {
@@ -84,13 +89,20 @@ export function SessionGate({
             user: status.user,
             signOut,
             threadId,
-            openThread: (id: string) => setThreadId(id),
-            newThread: () => setThreadId(crypto.randomUUID()),
+            provider,
+            openThread: (id: string, p: Provider) => {
+              setProvider(p);
+              setThreadId(id);
+            },
+            newThread: (p?: Provider) => {
+              if (p) setProvider(p);
+              setThreadId(crypto.randomUUID());
+            },
             historyVersion,
             refreshHistory: () => setHistoryVersion((v) => v + 1),
           }
         : null,
-    [status, threadId, historyVersion, signOut],
+    [status, threadId, provider, historyVersion, signOut],
   );
 
   if (status.kind === "loading") return <Splash />;
@@ -103,6 +115,7 @@ export function SessionGate({
         intelligenceAvailable={intelligenceAvailable}
         userId={value.user.id}
         threadId={value.threadId}
+        provider={value.provider}
       >
         {children}
       </AgentProvider>

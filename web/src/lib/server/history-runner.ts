@@ -7,7 +7,7 @@ import {
   type AgentRunnerRunRequest,
 } from "@copilotkit/runtime/v2";
 import { Observable } from "rxjs";
-import { USER_HEADER } from "../users";
+import { asProvider, PROVIDER_HEADER, USER_HEADER } from "../users";
 import { historyEvents, pendingInterruptsOf, snapshotFromLangGraph, uiState } from "./history-events";
 import { getSnapshot, saveSnapshot, touchThread } from "./history-store";
 import { getThreadState } from "./langgraph";
@@ -32,9 +32,11 @@ export class HistoryRunner extends InMemoryAgentRunner {
   override run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
     // The runtime copies forwarded request headers onto the per-request agent
     // clone; `headers` lives on LangGraphAgent, not on AbstractAgent's type.
-    const userId = userOf((request.agent as { headers?: Record<string, string> }).headers);
+    const headers = (request.agent as { headers?: Record<string, string> }).headers;
+    const userId = headerOf(headers, USER_HEADER);
     const threadId = request.threadId;
-    if (userId) touchThread(threadId, userId, firstUserText(request.input.messages));
+    const provider = asProvider(headerOf(headers, PROVIDER_HEADER)) ?? "anthropic";
+    if (userId) touchThread(threadId, userId, firstUserText(request.input.messages), provider);
 
     // The last snapshots of the run, as the browser received them — which,
     // unlike the agent server's thread, include subagent work (the agent's
@@ -93,9 +95,9 @@ export class HistoryRunner extends InMemoryAgentRunner {
   }
 }
 
-function userOf(headers: Record<string, string> | undefined): string | undefined {
+function headerOf(headers: Record<string, string> | undefined, name: string): string | undefined {
   if (!headers) return undefined;
-  const key = Object.keys(headers).find((k) => k.toLowerCase() === USER_HEADER);
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name);
   return key ? headers[key] : undefined;
 }
 

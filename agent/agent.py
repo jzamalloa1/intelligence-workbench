@@ -21,6 +21,7 @@ from agent_core.subagents import build_subagents
 from middleware.errors import FriendlyErrorMiddleware
 from middleware.guards import call_limit
 from middleware.provider_prompt import ProviderPromptMiddleware
+from middleware.provider_switch import ProviderSwitchMiddleware
 from tools.charts import render_chart
 from tools.research import research
 
@@ -63,12 +64,16 @@ agent = define_deep_agent(
     #   4. Friendly errors   — must sit OUTSIDE the model call it protects, so it
     #      wraps everything downstream of it and catches provider failures before
     #      they abort the run and surface as a bare "An internal error occurred".
-    #   5. Call limit last   — the outermost ceiling on the whole run.
+    #   5. Call limit        — the ceiling on the whole run (before/after hooks).
+    #   6. Provider switch   — innermost, next to the model: swaps in the
+    #      conversation's provider (x-llm-provider) per call, inside Friendly
+    #      errors so a failure on the swapped provider is still caught.
     middleware=[
         CopilotKitMiddleware(),
         TodoListMiddleware(),
         ProviderPromptMiddleware(),
         FriendlyErrorMiddleware(),
         call_limit(),
+        ProviderSwitchMiddleware("lead"),
     ],
 )

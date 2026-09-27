@@ -38,6 +38,7 @@ import { UsageMeters } from "@/components/UsageMeters";
 import { readUsage, summarize, type UsageSummary } from "@/lib/pricing";
 import { Avatar } from "@/components/SessionGate";
 import { useSession } from "@/lib/session-client";
+import { PROVIDERS, type Provider } from "@/lib/users";
 
 /**
  * Holds the UI state the agent is allowed to drive, above everything that
@@ -306,6 +307,7 @@ function Header({
         className={`flex items-center gap-3 ${INSPECTOR_ENABLED ? "mr-14" : ""}`}
       >
         <UsageMeters summary={usage} />
+        <ProviderToggle />
         <RunnerToggle />
 
         <span className="flex items-center gap-1.5 text-[11.5px] text-wb-muted" aria-live="polite">
@@ -360,6 +362,48 @@ function RunnerToggle() {
           }`}
         >
           {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const PROVIDER_LABEL: Record<Provider, { name: string; models: string }> = {
+  anthropic: { name: "Anthropic", models: "Claude Opus 5 lead · Sonnet 5 researchers" },
+  openai: { name: "OpenAI", models: "GPT-5.6 Terra lead and researchers" },
+};
+
+/**
+ * Which model provider the open conversation runs on. A conversation keeps the
+ * provider it started with (the server enforces it), so picking the other one
+ * starts a new conversation — ask the same question on both and compare them
+ * side by side in history, with the Cost meter on each.
+ */
+function ProviderToggle() {
+  const { provider, newThread } = useSession();
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Model provider"
+      className="flex items-center gap-0.5 rounded-full border border-wb-border bg-wb-panel-alt p-0.5 text-[11px]"
+    >
+      {PROVIDERS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          role="radio"
+          aria-checked={provider === p}
+          onClick={() => p !== provider && newThread(p)}
+          title={
+            p === provider
+              ? `This conversation runs on ${PROVIDER_LABEL[p].name}: ${PROVIDER_LABEL[p].models}.`
+              : `Start a new conversation on ${PROVIDER_LABEL[p].name} (${PROVIDER_LABEL[p].models}).`
+          }
+          className={`rounded-full px-2.5 py-1 transition-colors ${
+            provider === p ? "bg-wb-accent-soft text-wb-accent" : "text-wb-muted hover:text-wb-text"
+          }`}
+        >
+          {PROVIDER_LABEL[p].name}
         </button>
       ))}
     </div>

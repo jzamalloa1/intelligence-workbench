@@ -5,6 +5,7 @@ import { CopilotKit } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { INSPECTOR_ENABLED } from "@/lib/config";
 import { RunnerModeContext, type RunnerMode } from "@/lib/runner-mode";
+import { PROVIDER_HEADER, type Provider } from "@/lib/users";
 
 /**
  * Wraps <CopilotKit> with a runner toggle. Switching modes remounts
@@ -29,6 +30,7 @@ export function AgentProvider({
   intelligenceAvailable,
   userId,
   threadId,
+  provider,
   children,
 }: {
   intelligenceAvailable: boolean;
@@ -36,6 +38,8 @@ export function AgentProvider({
   userId: string;
   /** The open conversation — switching conversations is changing this. */
   threadId: string;
+  /** Sent on every request; the server enforces a stored conversation's own. */
+  provider: Provider;
   children: React.ReactNode;
 }) {
   // Local is the default, deliberately. Cloud's realtime gateway gives up
@@ -52,8 +56,8 @@ export function AgentProvider({
   const [dropped, setDropped] = useState(false);
 
   const headers = useCallback((): Record<string, string> => {
-    return mode === "local" ? { "x-runner": "local" } : {};
-  }, [mode]);
+    return { [PROVIDER_HEADER]: provider, ...(mode === "local" ? { "x-runner": "local" } : {}) };
+  }, [mode, provider]);
 
   // A dropped gateway otherwise surfaces only as console noise, which reads as
   // "the agent failed" when the agent in fact finished. Name it instead.
