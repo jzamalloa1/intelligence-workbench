@@ -34,6 +34,8 @@ import {
 } from "@/lib/workbench-ui";
 import { ChartDialog } from "@/components/charts/ChartDialog";
 import { HistorySidebar } from "@/components/HistorySidebar";
+import { UsageMeters } from "@/components/UsageMeters";
+import { readUsage, summarize, type UsageSummary } from "@/lib/pricing";
 import { Avatar } from "@/components/SessionGate";
 import { useSession } from "@/lib/session-client";
 
@@ -104,6 +106,7 @@ function Workbench() {
   const running = agent?.isRunning ?? false;
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);
+  const usage = useMemo(() => summarize(readUsage(agent?.state)), [agent?.state]);
   const { files, activity, charts } = useMemo(
     () => deriveFromMessages(messages),
     [messages],
@@ -120,6 +123,7 @@ function Workbench() {
       <div className="flex h-dvh flex-col overflow-hidden">
         <Header
           running={running}
+          usage={usage}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
         />
@@ -263,10 +267,12 @@ function useFocusPanelTool(charts: Chart[]) {
 
 function Header({
   running,
+  usage,
   sidebarOpen,
   onToggleSidebar,
 }: {
   running: boolean;
+  usage: UsageSummary;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
 }) {
@@ -299,6 +305,7 @@ function Header({
       <div
         className={`flex items-center gap-3 ${INSPECTOR_ENABLED ? "mr-14" : ""}`}
       >
+        <UsageMeters summary={usage} />
         <RunnerToggle />
 
         <span className="flex items-center gap-1.5 text-[11.5px] text-wb-muted" aria-live="polite">

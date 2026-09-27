@@ -409,6 +409,7 @@ thread.
 | `web/src/lib/downloads.ts` | Client-side downloads — report files, chart PNG/SVG/CSV; "Save as PDF" is the browser's print, via a print-only copy of the report |
 | `agent_core/approvals.py` | Plain-language approval text for `execute` — the `interrupt_on` description function |
 | `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — renders the plain-language description, emits `{decisions:[…]}` |
+| `web/src/lib/usage-tracker.ts`, `web/src/lib/pricing.ts` | Context and Cost meters: per-call usage from each model call's own report, carried in agent state as `workbenchUsage`; verified prices applied in the browser |
 | `web/src/lib/subagent-tracker.ts` | Keeps subagent tool calls through message snapshots (outbound) and out of the lead's thread (inbound) — see "How subagent work is kept" |
 | `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), for the `focus_panel` frontend tool |
 | `web/src/lib/users.ts`, `web/src/components/SessionGate.tsx` | Demo sign-in; owns the open conversation id (`?t=` in the URL) and hands it to `<CopilotKit threadId>` |
@@ -437,7 +438,8 @@ is no frontend Memory panel rendering it yet. All of this is tracked in [Roadmap
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
 | Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — gallery of every chart, full-screen view with table + PNG/SVG/CSV export, and live charts embedded in reports (downloadable as `.md` or PDF) |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
-| Summarization + context offload | Context Meter — token gauge, marks each compaction |
+| Summarization + context offload | Context Meter (header) — the lead's current context against its model's window, per-call growth chart, compactions counted |
+| Per-call token usage | Cost Meter (header) — estimated spend for the conversation, split by model and lead vs subagents, cache reads/writes priced at their own rates |
 | Durable memory (`AGENTS.md`) | Memory panel — what it carried across sessions |
 | Managed schedules (cron) | Daily Brief card |
 

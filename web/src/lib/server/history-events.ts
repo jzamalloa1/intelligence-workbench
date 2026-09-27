@@ -73,7 +73,9 @@ export function langchainToAgui(messages: unknown[]): Message[] {
 
 /** What the UI's panels read from agent state. Everything else stays server-side. */
 export function uiState(values: Record<string, unknown>): Record<string, unknown> {
-  return "todos" in values ? { todos: values.todos } : {};
+  const out: Record<string, unknown> = {};
+  for (const key of ["todos", "workbenchUsage"]) if (key in values) out[key] = values[key];
+  return out;
 }
 
 export function snapshotFromLangGraph(state: LangGraphThreadState): ThreadSnapshot {

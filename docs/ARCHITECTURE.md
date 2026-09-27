@@ -463,6 +463,24 @@ Verified at zero API cost: the recorded run replayed through the tracker (55 cal
 3 subagent runs; final snapshot 134 messages, placed after the `task` message, lead order
 unchanged; next-turn input 135 → 25) and `web/scripts/verify-subagents.mjs` in the browser.
 
+**Context and Cost meters — where the numbers come from (2026-09-26).** The obvious source,
+RUN_FINISHED's `usage`, is wrong for this agent: `@ag-ui/langgraph` builds it from streamed chunks
+only, and subagents don't stream (`disable_streaming=True`, §4d above). On the recorded bitcoin run
+it reported 54K input tokens where the 32 calls' own reports total 1.28M. The meters instead read
+each call's `on_chat_model_end` event (it reaches the stream as a RAW event): model name, lead vs
+subagent (graph depth, as in SubagentTracker), input/output and cache tokens. Two reporting quirks,
+both handled in `usageRecord`: `input_tokens` already includes cache reads and writes, and the lead
+reports cache writes as `cache_creation` while the non-streaming subagents report them as
+`ephemeral_5m_input_tokens` with `cache_creation: 0`.
+
+The per-conversation list lives in agent state as `workbenchUsage` — published with a STATE_DELTA
+after each call, added to every STATE_SNAPSHOT (a snapshot replaces client state), carried across
+turns in the run input's `state`, and removed from that input before the adapter sees it, so it
+never reaches the graph. Prices are applied in the browser (`lib/pricing.ts`, verified against both
+providers' pricing pages on 2026-09-26), so a price change needs no re-run. That run priced at about
+$2.09 over 32 calls — the Sonnet researchers ($1.18) cost more than the Opus lead ($0.91).
+Verified by hand on two records and with `web/scripts/verify-usage.mjs`.
+
 ## 5. Provider-agnostic model layer
 
 The agent runs identically on Anthropic or OpenAI, switched by `LLM_PROVIDER`. MDA supports

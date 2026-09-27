@@ -2,6 +2,7 @@ import { EventType, type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
 import { Observable } from "rxjs";
 import { SubagentTracker, withoutSubagentMessages } from "./subagent-tracker";
+import { takeUsageFromInput, UsageTracker } from "./usage-tracker";
 import { USER_HEADER } from "./users";
 
 /**
@@ -30,7 +31,10 @@ import { USER_HEADER } from "./users";
  */
 export class WorkbenchLangGraphAgent extends LangGraphAgent {
   /**
-   * Both directions of subagent bookkeeping (see subagent-tracker.ts):
+   * Stream bookkeeping, both directions. Usage (usage-tracker.ts) rides along:
+   * it is taken out of the input state and added to outgoing state.
+   *
+   * Subagents (see subagent-tracker.ts):
    *
    *  out — every event passes through a SubagentTracker, so subagent tool calls
    *        are tagged and survive MESSAGES_SNAPSHOTs;
@@ -41,10 +45,14 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
    */
   override run(input: RunAgentInput): ReturnType<LangGraphAgent["run"]> {
     const tracker = new SubagentTracker();
-    const source = super.run(withoutSubagentMessages(input));
+    const { input: cleaned, previous } = takeUsageFromInput(withoutSubagentMessages(input));
+    const usage = new UsageTracker(previous);
+    const source = super.run(cleaned);
     return new Observable((subscriber) => {
       const sub = source.subscribe({
-        next: (event) => subscriber.next(tracker.process(event)),
+        next: (event) => {
+          for (const out of usage.process(tracker.process(event))) subscriber.next(out);
+        },
         error: (err) => subscriber.error(err),
         complete: () => subscriber.complete(),
       });
