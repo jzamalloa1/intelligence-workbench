@@ -133,7 +133,7 @@ deploy time.
   0.8 but only mounts for trusted identities (verified Studio user / Slack DM) — not enabled.
 - Agent memory is deployment-shared. Never store personal data or credentials
   there, and treat its contents as untrusted input.
-- Restart `mda dev` after adding `memory.py`, `identity.py`, `schedules/`, `channels/` — they're
+- Restart `mda dev` after adding `memory.py`, `identity.py`, `skills/`, `schedules/`, `channels/` — they're
   discovered at compile time, not hot-reloaded.
 - Model IDs need the provider prefix (`anthropic:claude-opus-5`). Python uses `google_genai:`,
   TS uses `google-genai:`, Gateway uses `provider/model`.

@@ -688,5 +688,5 @@ From MDA's authoring contract — these are not preferences, they're hard limits
 - US LangSmith Cloud only. One agent entry per project. (Slack was the only channel through
   0.7; 0.8 exports an `HttpChannel` too — not evaluated.)
 - Build archive capped at 200 MB.
-- Restart `mda dev` after adding `memory.py`, `identity.py`, `schedules/`, or `channels/` —
+- Restart `mda dev` after adding `memory.py`, `identity.py`, `skills/`, `schedules/`, or `channels/` —
   these are discovered at compile time, not by hot reload.

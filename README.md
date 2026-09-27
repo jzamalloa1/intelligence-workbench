@@ -399,6 +399,7 @@ thread.
 | `tools/research.py` | Tavily search — the only tool subagents get |
 | `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
+| `skills/<name>/SKILL.md` | Procedures the lead loads when a task matches — see § Skills. Frontmatter `name` must equal the directory name |
 | `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
 | `identity.py` | Declares LangSmith-API-key auth for the deployment |
 | `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
@@ -418,10 +419,22 @@ thread.
 
 ### Not wired yet
 
-No `skills/` directory exists — the Skills Rail in the table below has nothing to show until one
-is authored. No `schedules/`. Memory (`memory.py`) is active on the backend (the agent already
-reads and writes `/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there
-is no frontend Memory panel rendering it yet. All of this is tracked in [Roadmap](#roadmap).
+No `schedules/`. Memory (`memory.py`) is active on the backend (the agent already reads and
+writes `/memories/agent/AGENTS.md`, confirmed live in the Activity panel), but there is no
+frontend Memory panel rendering it yet. Tracked in [Roadmap](#roadmap).
+
+### Skills
+
+`agent/skills/<name>/SKILL.md` — three so far: `competitive-analysis`, `market-sizing`,
+`data-analysis`. MDA mounts the folder read-only at `/skills/` for the **lead agent only**
+(subagents get skills only if their spec lists them), and deepagents' `SkillsMiddleware` lists
+each skill's name and description in the system prompt. The agent reads the full `SKILL.md`
+only when a task matches — progressive disclosure, so an unused skill costs a line of prompt, not
+the whole procedure. The Skills strip on the Plan panel shows both halves: every available skill
+(`/api/skills` reads the frontmatter from the repo) and the ones this conversation loaded (a
+`read_file` on `/skills/<name>/…`). Skills are discovered at compile time — restart `mda dev`
+after adding one. Verified with one live two-call run: the agent opened
+`/skills/market-sizing/SKILL.md` and the strip marked it loaded.
 
 ---
 
@@ -434,7 +447,7 @@ is no frontend Memory panel rendering it yet. All of this is tracked in [Roadmap
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
 | Subagents | Subagent Timeline — swimlanes, nested tool calls |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
-| Skills (progressive disclosure) | Skills Rail — which `SKILL.md` activated, and when |
+| Skills (progressive disclosure) | Skills strip (Plan panel) — every available skill, and which ones this conversation loaded |
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
 | Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — gallery of every chart, full-screen view with table + PNG/SVG/CSV export, and live charts embedded in reports (downloadable as `.md` or PDF) |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |

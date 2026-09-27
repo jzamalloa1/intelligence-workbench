@@ -1,10 +1,14 @@
 "use client";
 
-import type { Todo } from "@/lib/workbench";
+import type { SkillUse, Todo } from "@/lib/workbench";
 import { EmptyState, Panel, Pill } from "./Panel";
+import { SkillsStrip } from "./SkillsStrip";
 
-/** Live view of the agent's `write_todos` plan, read from agent state. */
-export function PlanBoard({ todos }: { todos: Todo[] }) {
+/**
+ * Live view of the agent's `write_todos` plan, read from agent state, with the
+ * skills strip on top — a loaded skill is what shapes the plan below it.
+ */
+export function PlanBoard({ todos, skills }: { todos: Todo[]; skills: SkillUse[] }) {
   const done = todos.filter((t) => t.status === "completed").length;
 
   return (
@@ -20,6 +24,7 @@ export function PlanBoard({ todos }: { todos: Todo[] }) {
         )
       }
     >
+      <SkillsStrip used={skills} />
       {todos.length === 0 ? (
         <EmptyState>
           The plan appears here once the agent calls{" "}

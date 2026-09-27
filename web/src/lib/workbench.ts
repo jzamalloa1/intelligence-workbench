@@ -195,16 +195,28 @@ function parseChart(id: string, args: Record<string, unknown>): Chart | undefine
   };
 }
 
+export interface SkillUse {
+  name: string;
+  /** How many times the agent opened the skill's files. */
+  reads: number;
+}
+
+/** `/skills/<name>/…` — where MDA mounts the project's skills (read-only). */
+const SKILL_PATH = /^\/skills\/([^/]+)\//;
+
 export interface Derived {
   files: WorkspaceFile[];
   activity: Activity[];
   charts: Chart[];
+  /** Skills the agent loaded in this conversation, in first-use order. */
+  skills: SkillUse[];
 }
 
 export function deriveFromMessages(messages: readonly Message[]): Derived {
   const files = new Map<string, WorkspaceFile>();
   const activity: Activity[] = [];
   const charts = new Map<string, Chart>();
+  const skills = new Map<string, SkillUse>();
   // toolCallId -> index in `activity`, so results can be attached on arrival.
   const pending = new Map<string, number>();
 
@@ -244,6 +256,11 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
           }
         }
 
+        if (tool === "read_file") {
+          const skill = SKILL_PATH.exec(str(args.file_path) ?? "")?.[1];
+          if (skill) skills.set(skill, { name: skill, reads: (skills.get(skill)?.reads ?? 0) + 1 });
+        }
+
         if (tool === CHART_TOOL) {
           const chart = parseChart(call.id, args);
           if (chart) charts.set(call.id, chart);
@@ -272,7 +289,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
     }
   }
 
-  return { files: [...files.values()], activity, charts: [...charts.values()] };
+  return { files: [...files.values()], activity, charts: [...charts.values()], skills: [...skills.values()] };
 }
 
 /** Tool calls made inside subagents — shown in the side panels, not the chat. */

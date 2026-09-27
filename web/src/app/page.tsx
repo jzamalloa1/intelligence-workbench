@@ -107,7 +107,7 @@ function Workbench() {
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);
   const usage = useMemo(() => summarize(readUsage(agent?.state)), [agent?.state]);
-  const { files, activity, charts } = useMemo(
+  const { files, activity, charts, skills } = useMemo(
     () => deriveFromMessages(messages),
     [messages],
   );
@@ -149,7 +149,7 @@ function Workbench() {
 
           {/* Plan + activity: the agent's reasoning made visible. */}
           <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 lg:grid">
-            <PlanBoard todos={todos} />
+            <PlanBoard todos={todos} skills={skills} />
             <ActivityTimeline activity={activity} />
           </div>
 
