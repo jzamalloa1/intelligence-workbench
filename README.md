@@ -470,6 +470,45 @@ the whole procedure. The Skills strip on the Plan panel shows both halves: every
 after adding one. Verified with one live two-call run: the agent opened
 `/skills/market-sizing/SKILL.md` and the strip marked it loaded.
 
+**A skill is instructions, not code or an agent.** It has no tools of its own, never calls
+anything, and nothing returns to it. The agent that reads it follows the steps with the tools it
+already has — so a skill that names `execute` or `task` works only because the lead has tools by
+those names. deepagents parses an `allowed-tools` frontmatter field but only prints it in the
+prompt as a hint; it restricts nothing.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Repo as agent/skills/NAME/SKILL.md
+    participant Hub as /skills/ mount<br/>(Context Hub, read-only)
+    participant MW as SkillsMiddleware
+    participant Lead as Lead agent
+    participant R as researcher subagent
+    participant T as Lead's tools
+    participant UI as Workbench UI
+
+    Repo->>Hub: mda dev or mda deploy syncs it (compile time)
+    Note over Hub,Lead: Mounted for the lead only.<br/>The researcher's spec lists no skills, so it sees none.
+    MW->>Lead: every run: one line per skill in the system prompt<br/>name, description, path
+    Lead->>Lead: task matches a description?
+    Lead->>Hub: read_file /skills/market-sizing/SKILL.md
+    Hub-->>Lead: full procedure, as the tool result
+    Lead-->>UI: that read_file marks the skill loaded in the Skills strip
+    Lead->>R: task — delegation, if the skill says to
+    R-->>Lead: findings (plus a /research/ file)
+    Lead->>T: execute, write_file, render_chart as the steps say
+    T-->>UI: sandbox output, /reports/ file, chart
+    Lead-->>UI: final answer — ordinary agent output, nothing goes back to the skill
+```
+
+| Name a skill can use | Where the lead gets it |
+|---|---|
+| `research`, `render_chart` | Our tools, `agent.py` |
+| `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card |
+| `task` | deepagents' subagent middleware — delegation to `researcher` |
+| `write_todos` | `TodoListMiddleware`, added in `agent.py` |
+| `focus_panel` | Frontend tool from the web app (CopilotKit) |
+
 ---
 
 ## What it demonstrates
