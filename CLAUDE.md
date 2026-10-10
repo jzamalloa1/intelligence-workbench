@@ -165,15 +165,18 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 **Frontend (`web/`)** — CopilotKit v2 (`@copilotkit/react-core/v2`).
 
 - The runner is env-switched: `INTELLIGENCE_API_KEY` set → `IntelligenceAgentRunner`, unset →
-  `InMemoryAgentRunner` (the documented `SqliteAgentRunner` does not exist in 1.69.3). Features
+  `HistoryRunner` (InMemoryAgentRunner + our per-user SQLite; `SqliteAgentRunner` lives in the
+  separate `@copilotkit/sqlite-runner` and is unused). Features
   requiring Intelligence (threads drawer, Inspector) must degrade gracefully, not crash.
 - **Import `LangGraphAgent` from `@ag-ui/langgraph`**, not `@copilotkit/runtime/langgraph`
   (deprecated v1). Keep `@ag-ui/langgraph` **and `@ag-ui/client`** pinned to the exact versions
   `@copilotkit/runtime` depends on — a caret range breaks every route. See ARCHITECTURE §4b.
+  On 1.78.0 that is `@ag-ui/langgraph` 0.0.44 and `@ag-ui/client`/`core` 1.0.2 (all exact pins).
 - **`route.ts` uses `WorkbenchLangGraphAgent`** (`src/lib/workbench-agent.ts`), not the stock
-  class. It patches an adapter bug that drops a tool call following text and emits
-  `write_todos`/`task` with a null name — which freezes the UI mid-run. Re-check it against the
-  adapter source on every `@ag-ui/langgraph` bump (ARCHITECTURE §4d, "the nameless tool call").
+  class. It fills the null name the adapter gives `write_todos`/`task` late starts — fatal under
+  AG-UI 1.0's strict event checks — and addresses multi-interrupt resumes. On every
+  `@ag-ui/langgraph` bump run `npx tsx scripts/verify-adapter.ts`: it replays synthetic events
+  through the stock adapter and ours and says which patches are still needed (ARCHITECTURE §4d).
 - **Sign-in is a demo** (`lib/users.ts`, httpOnly `wb_user` cookie). `route.ts` stamps
   `x-workbench-user` from the cookie — overwriting the browser's — and refuses another user's
   thread with 404. Never read the user from a request body or a client-sent header.
@@ -183,7 +186,8 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs` — run them after UI changes.
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs` — run them after UI changes —
+  and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
 - **Subagent messages never go back to the lead.** `SubagentTracker` re-inserts subagent tool

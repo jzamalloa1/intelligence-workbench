@@ -391,6 +391,9 @@ Not caused by the same-day upgrade: the adapter is unchanged (0.0.43 before and 
 `langchain-anthropic`'s streaming code is identical between 1.7.0 and 1.7.4. It is latent, and
 fires whenever the lead narrates before `write_todos`/`task`.
 
+*(2026-10-09: the first half — the dropped tool call — is fixed upstream in `@ag-ui/langgraph`
+0.0.44 and the patch is gone; the null-name half is still patched. See the 1.78 notes in §6.)*
+
 Fix: `web/src/lib/workbench-agent.ts`, a `LangGraphAgent` subclass used by `route.ts`. It closes
 the open text message *before* the adapter sees a named tool-call chunk, and fills a missing
 ToolMessage name from the `on_tool_end` event. Offline replay of the recorded run: stock emits
@@ -591,9 +594,9 @@ trusting. The MDA row below is the proof: 0.7.3 → 0.8.3 was **four releases in
 | `langchain-openai` | 1.6.6 | 1.6.6 | current |
 | `langgraph` | 1.2.12 | 1.2.12 | current |
 | `pydantic` | 2.13.5 | 2.13.5 (stable) | **constrained** `<2.14.0a0` — see below |
-| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.74.0 | 1.74.0 | bumped from 1.73.0 on 09-26 |
-| `@ag-ui/langgraph` | 0.0.43 | 0.0.43 | still exactly what `@copilotkit/runtime@1.74.0` depends on |
-| `@ag-ui/client` | 0.0.59 | 1.0.0 | **deliberately behind** — CopilotKit 1.74 still depends on 0.0.59 |
+| `@copilotkit/react-core` / `react-ui` / `runtime` | 1.78.0 | 1.78.0 | bumped from 1.74.0 on 10-09 |
+| `@ag-ui/langgraph` | 0.0.44 | 0.0.45 | exactly what `@copilotkit/runtime@1.78.0` depends on — 0.0.45 waits for a runtime that pins it |
+| `@ag-ui/client` / `@ag-ui/core` | 1.0.2 | 1.0.2 | `core` is now a direct dependency (imported by `lib/workbench.ts`, previously hoisted) |
 | `next` | 16.3.6 | 16.3.6 | patch bump |
 | `react` / `react-dom` | 19.3.0 | 19.3.0 | minor bump; every peer range (`^19`) accepts it |
 | `typescript` | 5.9.3 | 7.0.2 | **deliberately behind** — 7 is the native-compiler major; not verified with Next 16's build-time typecheck |
@@ -603,6 +606,31 @@ The `@ag-ui/langgraph` / `@ag-ui/client` rule is "match CopilotKit, not npm late
 either past what `@copilotkit/runtime` itself depends on reintroduces the duplicate-
 `@ag-ui/client` crash in §4d. Verified by reading `@copilotkit/runtime@1.74.0`'s own
 dependencies, and after install `npm ls` shows a single `@ag-ui/client@0.0.59`.
+
+**CopilotKit 1.74 → 1.78, AG-UI 0.0.x → 1.0 (2026-10-09).** Read off source diffs of the
+installed and new tarballs. What touches us:
+
+- **`@ag-ui/langgraph` 0.0.44 fixes the dropped tool call after text** (§4d) — the
+  `TEXT_MESSAGE_END` branch now carries on to the tool-call start instead of `break`ing. Our
+  `closeTextBeforeToolCall` patch is removed. The **null name on Command tools' late starts is
+  not fixed**, and AG-UI 1.0 makes it fatal: `toolCallName` is a required string and the client's
+  `enforceEvents` errors the run on a malformed required field. `nameAnonymousToolMessages` stays.
+  `scripts/verify-adapter.ts` replays both cases, stock vs ours, and schema-checks our output.
+- **Still not upstream:** subagent snapshot handling (`SubagentTracker`; nothing emits
+  `subagentRunId`), per-call usage with cache writes (`UsageTracker`; RUN_FINISHED usage is
+  summed per model), and multi-interrupt resume (`interrupts.ts` unchanged; the native path
+  wraps answers in `__agui_resume_map__`, which only the Python AG-UI server reads).
+- **Don't set `emitRawEvents: false`** (new in 0.0.44, default true): both trackers read RAW
+  events and `rawEvent`.
+- **AG-UI 1.0:** tool message `content` may be a content-part array (we flatten it with
+  `contentToText`); `THINKING_*` removed (`REASONING_*`); a `cancelled` run outcome; 10 MB cap per
+  SSE frame; unknown fields stripped with a warning. Our subclass's overrides are unchanged.
+- **Fixes we get:** Stop cancels the LangGraph run (1.77.0); interrupt resumes get fresh run ids
+  (1.75.2); chat waits for thread replay before sending (1.77.1). No deprecations of anything
+  we use.
+- **Found while reading the runtime (present since 1.74):** the local runner serves
+  `/api/copilotkit/threads…` (list, messages, events, state, clear) with no user filter. Closed
+  in `route.ts` (404 on the local runner), checked by `verify-history.mjs`.
 
 **CopilotKit 1.73 → 1.74 (2026-09-26).** Nothing breaking. Relevant fixes: per-message state
 cloning removed from react-core (long runs re-render less), and the realtime gateway no longer

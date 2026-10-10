@@ -1,4 +1,14 @@
-import type { Message } from "@ag-ui/core";
+import { contentToText, type ContentPart, type Message } from "@ag-ui/core";
+
+/**
+ * A tool result as display text. Since AG-UI 1.0 a tool message's content can
+ * be an array of content parts as well as a string; anything else is shown as
+ * JSON.
+ */
+export function toolResultText(content: unknown): string {
+  if (typeof content === "string" || Array.isArray(content)) return contentToText(content as string | ContentPart[]);
+  return JSON.stringify(content ?? "");
+}
 
 /**
  * Derives everything the side panels render from the agent's messages and state.
@@ -307,9 +317,7 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
     if (m.role === "tool" && m.toolCallId) {
       const idx = pending.get(m.toolCallId);
       if (idx !== undefined) {
-        const text =
-          typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-        activity[idx] = { ...activity[idx], status: "done", result: text };
+        activity[idx] = { ...activity[idx], status: "done", result: toolResultText(m.content) };
       }
     }
   }

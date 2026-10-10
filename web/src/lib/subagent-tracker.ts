@@ -24,6 +24,7 @@
  */
 
 import { EventType, type RunAgentInput } from "@ag-ui/client";
+import { contentToText, type ContentPart } from "@ag-ui/core";
 
 interface SubagentCall {
   toolCallId: string;
@@ -86,7 +87,12 @@ export class SubagentTracker {
         const call = this.calls.get(e.toolCallId as string);
         if (!call) return event;
         call.resultMessageId = e.messageId as string;
-        call.result = typeof e.content === "string" ? e.content : JSON.stringify(e.content ?? "");
+        // String or (AG-UI 1.0) content parts. No local imports in this module:
+        // scripts/verify-subagents.mjs loads it with Node's type stripping.
+        call.result =
+          typeof e.content === "string" || Array.isArray(e.content)
+            ? contentToText(e.content as string | ContentPart[])
+            : JSON.stringify(e.content ?? "");
         return { ...e, subagentRunId: call.subagentRunId } as E;
       }
       case EventType.MESSAGES_SNAPSHOT:
