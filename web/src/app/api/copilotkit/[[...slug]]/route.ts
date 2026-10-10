@@ -12,9 +12,10 @@
  *     `@copilotkit/runtime/langgraph`. The latter is the v1 SDK and is marked
  *     `@deprecated since 1.68.2` in its own type definitions.
  *
- *  2. `SqliteAgentRunner` does not exist in @copilotkit/runtime 1.69.3 despite
- *     being documented. The non-Intelligence fallback is `InMemoryAgentRunner`,
- *     which loses thread history on server restart.
+ *  2. `SqliteAgentRunner` is not in @copilotkit/runtime; it ships separately as
+ *     `@copilotkit/sqlite-runner`. We don't use it: the local runner is
+ *     `HistoryRunner` (InMemoryAgentRunner + our own per-user SQLite store),
+ *     because ownership checks need the user on every row.
  */
 
 import {
@@ -101,6 +102,13 @@ const intelligenceHandler = intelligenceApiKey
 async function handler(request: Request): Promise<Response> {
   const wantsLocal = request.headers.get("x-runner") === "local";
   const active = wantsLocal || !intelligenceHandler ? localHandler : intelligenceHandler;
+  // CopilotKit's REST thread endpoints (list, messages, events, state, archive,
+  // clear, subscribe) read the local runner's in-memory store with no notion of
+  // who is asking — every user's in-process conversations, and a "clear" that
+  // wipes them all. The app never calls them (history goes through /api/threads,
+  // owner-checked), so on the local runner they don't exist. The Intelligence
+  // runner scopes them by identifyUser and keeps them.
+  if (active === localHandler && isThreadEndpoint(request)) return json({ error: "Not found" }, 404);
   const prepared = await withUser(request);
   return prepared instanceof Response ? prepared : active(prepared);
 }
@@ -144,6 +152,10 @@ async function withUser(request: Request): Promise<Response | Request> {
   headers.delete(PROVIDER_HEADER);
   if (provider) headers.set(PROVIDER_HEADER, provider);
   return new Request(request.url, { method: request.method, headers, body, signal: request.signal });
+}
+
+function isThreadEndpoint(request: Request): boolean {
+  return /^\/api\/copilotkit\/threads(?:\/|$)/.test(new URL(request.url).pathname);
 }
 
 function threadIdOf(body: string | undefined): string | undefined {

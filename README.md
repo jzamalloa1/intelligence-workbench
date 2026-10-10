@@ -411,7 +411,8 @@ input 135 → 25 messages) and with `web/scripts/verify-subagents.mjs` (zero API
   makes history survive on a laptop.
 - **Ownership is enforced server-side**: `/api/threads` lists only the cookie's user, and
   `route.ts` answers 404 to run / connect / stop on someone else's thread — verified including a
-  spoofed `x-workbench-user` header.
+  spoofed `x-workbench-user` header. CopilotKit's own `/api/copilotkit/threads…` REST endpoints
+  are closed (404) on the local runner: they read the runner's store with no user filter.
 - History is kept for **Local** mode. Cloud mode stores conversations in CopilotKit Intelligence.
 
 Verified with `web/scripts/verify-history.mjs` (seeded conversations, zero API cost) plus one

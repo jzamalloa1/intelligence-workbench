@@ -177,6 +177,8 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **Sign-in is a demo** (`lib/users.ts`, httpOnly `wb_user` cookie). `route.ts` stamps
   `x-workbench-user` from the cookie — overwriting the browser's — and refuses another user's
   thread with 404. Never read the user from a request body or a client-sent header.
+  CopilotKit's built-in `/threads…` REST endpoints are **closed on the local runner** (they
+  have no user filter) — don't reopen them; history goes through `/api/threads`.
 - **History lives in `web/.data/workbench.sqlite`** (gitignored), written by `HistoryRunner`.
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,

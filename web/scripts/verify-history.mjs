@@ -134,6 +134,18 @@ try {
   check(connect.status() === 404, `${OTHER} cannot open ${OWNER}'s thread, even spoofing the header (got ${connect.status()})`);
   const del = await page.request.delete(`${BASE}/api/threads/${T1}`);
   check(del.status() === 404, `${OTHER} cannot delete ${OWNER}'s thread (got ${del.status()})`);
+  // CopilotKit's own thread REST endpoints read the runner's store with no user
+  // filter, so on the local runner they must not exist at all.
+  const local = { headers: { "x-runner": "local" } };
+  for (const [method, p] of [
+    ["get", "/api/copilotkit/threads"],
+    ["get", `/api/copilotkit/threads/${T1}/messages`],
+    ["get", `/api/copilotkit/threads/${T1}/state`],
+    ["post", "/api/copilotkit/threads/clear"],
+  ]) {
+    const res = await page.request[method](`${BASE}${p}`, local);
+    check(res.status() === 404, `CopilotKit ${method.toUpperCase()} ${p.replace(T1, ":id")} is closed (got ${res.status()})`);
+  }
   await page.screenshot({ path: `${OUT}/history-other-user.png` });
 
   // --- back to Alex: delete
