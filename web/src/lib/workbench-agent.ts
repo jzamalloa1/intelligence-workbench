@@ -79,6 +79,8 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
    */
   override async prepareStream(...args: Parameters<LangGraphAgent["prepareStream"]>) {
     const [input, streamMode] = args;
+    const rewind = rewindRequest(input.forwardedProps);
+    if (rewind && input.threadId) return this.rewind(input, streamMode, rewind);
     const command = input.forwardedProps?.command;
     if (command?.resume !== undefined && !input.resume?.length && input.threadId) {
       const state = await this.client.threads.getState(input.threadId).catch(() => undefined);
@@ -92,6 +94,45 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
       }
     }
     return super.prepareStream(input, streamMode);
+  }
+
+  /**
+   * Regenerate / edit: re-run the conversation from one of the user's messages,
+   * with its text possibly changed. The browser trims its message list to end
+   * at that message and asks for it by id (`forwardedProps.workbenchRewind`).
+   *
+   * The adapter can already fork a thread from the checkpoint before a message
+   * (`prepareRegenerateStream`), but only triggers it on its own when the
+   * browser sends a message the thread doesn't hold — never for a plain trim
+   * or an edit. So it is asked for explicitly here. The marker is removed
+   * first: the adapter spreads forwardedProps into the LangGraph run request.
+   */
+  private async rewind(
+    input: Parameters<LangGraphAgent["prepareStream"]>[0],
+    streamMode: Parameters<LangGraphAgent["prepareStream"]>[1],
+    { messageId, content }: { messageId: string; content: string },
+  ) {
+    const { workbenchRewind: _drop, ...forwardedProps } = input.forwardedProps ?? {};
+    void _drop;
+    this.assistant ||= await this.getAssistant();
+    const thread = await this.getOrCreateThread(input.threadId as string);
+    if (this.activeRun) {
+      this.activeRun.threadId = thread.thread_id;
+      this.activeRun.schemaKeys ??= await this.getSchemaKeys();
+    }
+    try {
+      return await this.prepareRegenerateStream(
+        { ...input, forwardedProps, threadId: thread.thread_id, messageCheckpoint: { id: messageId, type: "human", content } },
+        streamMode,
+      );
+    } catch (err) {
+      if (err instanceof Error && /Message not found/.test(err.message)) {
+        throw new Error(
+          "This conversation can't be rewound: its earlier turns are no longer on the agent server (it was restarted or rebuilt). Ask again as a new message.",
+        );
+      }
+      throw err;
+    }
   }
 
   /**
@@ -121,4 +162,11 @@ function nameAnonymousToolMessages(event: any) {
   for (const message of candidates) {
     if (message?.type === "tool" || message?.tool_call_id) message.name ??= toolName;
   }
+}
+
+function rewindRequest(forwardedProps: unknown): { messageId: string; content: string } | undefined {
+  const r = (forwardedProps as { workbenchRewind?: { messageId?: unknown; content?: unknown } } | undefined)?.workbenchRewind;
+  return r && typeof r.messageId === "string" && typeof r.content === "string"
+    ? { messageId: r.messageId, content: r.content }
+    : undefined;
 }

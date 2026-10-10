@@ -20,6 +20,7 @@ import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { DelegationGroup, ResearchBanner, TaskLaneCard } from "@/components/ResearchLanes";
+import { EditBar, useMessageActions, useWorkbenchSuggestions, WelcomeHero } from "@/components/ChatExtras";
 import { deriveLanes, LanesContext, taskCallIds, withoutSubagentRows } from "@/lib/lanes";
 import { Workspace } from "@/components/Workspace";
 import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
@@ -115,6 +116,18 @@ function Workbench() {
   useApprovals();
   useFocusPanelTool(charts);
   useHistoryRefresh(running);
+  useWorkbenchSuggestions({ charts, files, lanes, running });
+  const actions = useMessageActions(agent);
+  const showWelcome = useSettled(messages.length === 0 && !running, 400);
+  const { onRegenerate, onEditMessage } = actions;
+  const messageView = useMemo(
+    () => ({
+      ...MESSAGE_VIEW,
+      assistantMessage: { onRegenerate },
+      userMessage: { onEditMessage },
+    }),
+    [onRegenerate, onEditMessage],
+  );
 
   return (
     <ChartLibraryContext.Provider value={charts}>
@@ -143,8 +156,24 @@ function Workbench() {
           <Panel title="Conversation" className="min-h-0">
             <div className="flex h-full flex-col">
               <ResearchBanner />
-              <div className="min-h-0 flex-1">
-                <CopilotChat agentId="workbench" messageView={MESSAGE_VIEW} />
+              {actions.editing ? (
+                <EditBar
+                  editing={actions.editing}
+                  onChange={(text) => actions.setEditing((e) => (e ? { ...e, text } : e))}
+                  onCancel={() => actions.setEditing(null)}
+                  onSubmit={() => {
+                    actions.rewind(actions.editing!.id, actions.editing!.text);
+                    actions.setEditing(null);
+                  }}
+                />
+              ) : null}
+              <div className="relative min-h-0 flex-1">
+                <CopilotChat agentId="workbench" messageView={messageView} />
+                {showWelcome ? (
+                  <div className="absolute inset-x-0 top-0 bottom-28 flex items-center justify-center overflow-y-auto bg-wb-panel px-6">
+                    <WelcomeHero onPick={actions.send} />
+                  </div>
+                ) : null}
               </div>
             </div>
           </Panel>
@@ -189,6 +218,24 @@ function groupDelegations(messages: Parameters<typeof withoutSubagentRows>[0]): 
 }
 
 const MESSAGE_VIEW = { transformMessages: withoutSubagentRows, groupMessages: groupDelegations };
+
+/**
+ * `value`, but only once it has held for `ms`. A reopened conversation is empty
+ * for a moment while its messages load; without this the welcome screen would
+ * flash over it.
+ */
+function useSettled(value: boolean, ms: number): boolean {
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!value) {
+      setSettled(false);
+      return;
+    }
+    const t = setTimeout(() => setSettled(true), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return value && settled;
+}
 
 /**
  * Keeps the history sidebar current: a run starting registers a new

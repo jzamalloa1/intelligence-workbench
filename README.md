@@ -199,6 +199,23 @@ fallback. `verify-approval.mjs` and `verify-adapter.ts` cover both.
 > event `@ag-ui/langgraph` dispatches. Note also that `interrupt` is `null` on this path
 > (it is the "legacy" custom-event flow), so the payload is read from `event.value`.
 
+**You can rewind.** Every answer has **Regenerate**, and every question has **Edit**, which
+re-runs the conversation from there. Both trim the browser's message list to that question and
+send `forwardedProps.workbenchRewind`. `WorkbenchLangGraphAgent` then forks the LangGraph thread
+from the checkpoint before that message (the adapter's `prepareRegenerateStream`, which it never
+triggers on its own for a plain trim or edit). The thread really is rewound, not appended to:
+verified live, where the thread afterwards held only the edited question and its new answer. A
+conversation whose agent-side thread was wiped (an `mda dev` rebuild) can't be rewound and says
+so.
+
+**Getting started, and what next.** An empty conversation shows a welcome screen with four
+starter prompts. These are drawn by the app, because CopilotChat shows its own welcome screen
+only when no thread id is passed, and history always passes one. After a run, suggestion chips
+offer follow-ups based on what it produced: turn the charts into a report, summarize the report,
+go deeper on a researcher's question. They are computed in the browser. CopilotKit's "dynamic"
+suggestions would cost an extra model call through the deep agent every turn. Checked by
+`web/scripts/verify-chat.mjs` (zero API cost).
+
 **You let the agent move the UI.** `useFrontendTool({name: "focus_panel", …})` registers a tool
 that executes *in the browser*, not in the agent process, so the agent can switch the Sandbox
 panel to Charts after rendering one, or open a file it just wrote — instead of describing where
@@ -541,6 +558,7 @@ sequenceDiagram
 | Capability | Where you see it |
 |---|---|
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
+| Chat UX | Welcome screen with starter prompts, follow-up suggestion chips, Regenerate and Edit (the thread forks from the question's checkpoint) |
 | Subagents | Research lanes in the chat — one live card per delegation (status, latest step, searches, notes, answer), a progress-framed group for parallel delegations, a banner naming who is working; Activity Timeline for the full call list |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
 | Skills (progressive disclosure) | Skills strip (Plan panel) — every available skill, and which ones this conversation loaded |

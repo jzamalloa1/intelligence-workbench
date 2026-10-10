@@ -128,5 +128,31 @@ for (const [name, events] of [["text then tool", textThenTool], ["nameless tool 
   check(JSON.stringify(built) === JSON.stringify({ "int-b": { ok: 1 } }), "WorkbenchLangGraphAgent builds the resume map, not __agui_resume_map__");
 }
 
-console.log(failures.length ? `\n${failures.length} FAILED` : "\nALL PASS");
-process.exit(failures.length ? 1 : 0);
+// Regenerate / edit: the browser's rewind request forks from the user
+// message's checkpoint, and its marker never reaches the LangGraph run request.
+async function rewindChecks() {
+  const agent = ours() as unknown as Record<string, unknown> & {
+    activeRun: unknown;
+    prepareStream: (input: unknown, mode: unknown) => Promise<unknown>;
+  };
+  let captured: { forwardedProps?: Record<string, unknown>; messageCheckpoint?: unknown } | undefined;
+  agent.getAssistant = async () => ({ assistant_id: "a" });
+  agent.getOrCreateThread = async (id: string) => ({ thread_id: id });
+  agent.getSchemaKeys = async () => ({});
+  agent.prepareRegenerateStream = async (input: typeof captured) => {
+    captured = input;
+    return { streamResponse: null, state: {}, streamMode: [] };
+  };
+  agent.activeRun = { id: "r", threadId: "t", hasFunctionStreaming: false, modelMadeToolCall: false, usage: [] };
+  await agent.prepareStream(
+    { threadId: "t-1", runId: "r", messages: [], tools: [], context: [], state: {}, forwardedProps: { workbenchRewind: { messageId: "u-1", content: "edited" }, keep: 1 } },
+    ["events"],
+  );
+  check(JSON.stringify(captured?.messageCheckpoint) === JSON.stringify({ id: "u-1", type: "human", content: "edited" }), "rewind forks from the user message, with its new text");
+  check(captured?.forwardedProps?.workbenchRewind === undefined && captured?.forwardedProps?.keep === 1, "the rewind marker is stripped before the run request");
+}
+
+void rewindChecks().then(() => {
+  console.log(failures.length ? `\n${failures.length} FAILED` : "\nALL PASS");
+  process.exit(failures.length ? 1 : 0);
+});
