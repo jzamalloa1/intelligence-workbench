@@ -38,3 +38,31 @@ function parse(value: unknown): unknown {
 function canonical(value: unknown): string {
   return JSON.stringify(parse(value));
 }
+
+/**
+ * The resume value for CopilotKit's standard interrupt path, which collects an
+ * answer per interrupt and sends them as `RunAgentInput.resume[]`. The adapter
+ * would wrap them as `{"__agui_resume_map__": …}`, which only the Python AG-UI
+ * server unwraps; a plain LangGraph server (MDA) needs `{interrupt_id: value}`.
+ *
+ * A cancelled entry becomes a rejection of every action in that request — the
+ * approval middleware requires exactly one decision per action.
+ */
+export function resumeMap(
+  entries: readonly { interruptId: string; status: string; payload?: unknown }[],
+  open: readonly { id: string; metadata?: { langgraph?: { raw?: unknown } } }[],
+): unknown {
+  const map: Record<string, unknown> = {};
+  for (const e of entries) {
+    if (e.status === "resolved") {
+      map[e.interruptId] = parse(e.payload);
+      continue;
+    }
+    const raw = parse(open.find((i) => i.id === e.interruptId)?.metadata?.langgraph?.raw) as
+      | { action_requests?: unknown[] }
+      | undefined;
+    const count = Array.isArray(raw?.action_requests) ? raw.action_requests.length : 1;
+    map[e.interruptId] = { decisions: Array.from({ length: count }, () => ({ type: "reject", message: "Cancelled." })) };
+  }
+  return map;
+}

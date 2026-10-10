@@ -1,7 +1,7 @@
 import { type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
 import { Observable } from "rxjs";
-import { addressResume, type PendingInterrupt } from "./interrupt-resume";
+import { addressResume, resumeMap, type PendingInterrupt } from "./interrupt-resume";
 import { SubagentTracker, withoutSubagentMessages } from "./subagent-tracker";
 import { takeUsageFromInput, UsageTracker } from "./usage-tracker";
 import { USER_HEADER } from "./users";
@@ -92,6 +92,16 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
       }
     }
     return super.prepareStream(input, streamMode);
+  }
+
+  /**
+   * Standard interrupt path: CopilotKit sends one answer per open interrupt as
+   * `resume[]`. Address each to its interrupt id — see interrupt-resume.ts.
+   */
+  protected override buildCommandResumeFromAgui(
+    ...[entries, ctx]: Parameters<LangGraphAgent["buildCommandResumeFromAgui"]>
+  ) {
+    return resumeMap(entries, ctx.openInterrupts);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches the base signature

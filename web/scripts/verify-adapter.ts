@@ -10,6 +10,7 @@
 import { EventType } from "@ag-ui/client";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import { LangGraphAgent } from "@ag-ui/langgraph";
+import { resumeMap } from "../src/lib/interrupt-resume";
 import { WorkbenchLangGraphAgent } from "../src/lib/workbench-agent";
 
 type Emitted = { type: string; toolCallName?: string | null; toolCallId?: string; delta?: string };
@@ -102,6 +103,29 @@ for (const [name, events] of [["text then tool", textThenTool], ["nameless tool 
     .map((e) => ({ e, r: EventSchemas.safeParse(e) }))
     .filter(({ r }) => !r.success);
   check(bad.length === 0, `AG-UI 1.0 schema accepts every event from "${name}"${bad.length ? `: ${bad.map(({ e }) => e.type).join(", ")}` : ""}`);
+}
+
+// Standard interrupt path: one answer per open interrupt, as LangGraph's resume
+// map ({interrupt_id: value}) — not the adapter's `__agui_resume_map__` wrapper,
+// which a plain LangGraph server can't read.
+{
+  const open = [
+    { id: "int-a", metadata: { langgraph: { raw: { action_requests: [{}, {}] } } } },
+    { id: "int-b", metadata: { langgraph: { raw: { action_requests: [{}] } } } },
+  ];
+  const map = resumeMap(
+    [
+      { interruptId: "int-a", status: "cancelled" },
+      { interruptId: "int-b", status: "resolved", payload: { decisions: [{ type: "approve" }] } },
+    ],
+    open,
+  ) as Record<string, { decisions: { type: string }[] }>;
+  check(Object.keys(map).join() === "int-a,int-b", "resume map is keyed by interrupt id");
+  check(map["int-b"].decisions[0].type === "approve", "a resolved answer passes through");
+  check(map["int-a"].decisions.length === 2 && map["int-a"].decisions.every((d) => d.type === "reject"), "a cancelled one rejects every action in its request");
+  const agent = ours() as unknown as { buildCommandResumeFromAgui: (e: unknown, c: unknown) => unknown };
+  const built = agent.buildCommandResumeFromAgui([{ interruptId: "int-b", status: "resolved", payload: { ok: 1 } }], { openInterrupts: open });
+  check(JSON.stringify(built) === JSON.stringify({ "int-b": { ok: 1 } }), "WorkbenchLangGraphAgent builds the resume map, not __agui_resume_map__");
 }
 
 console.log(failures.length ? `\n${failures.length} FAILED` : "\nALL PASS");

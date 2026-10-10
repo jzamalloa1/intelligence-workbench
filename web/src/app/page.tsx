@@ -14,7 +14,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { z } from "zod";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import { ApprovalCard, parseHITLRequest } from "@/components/ApprovalCard";
+import { ApprovalCard, ApprovalStack, parseHITLRequest } from "@/components/ApprovalCard";
 import { Panel } from "@/components/Panel";
 import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
@@ -220,12 +220,23 @@ function useApprovals() {
     // shape falls through to whatever else is registered rather than
     // rendering a broken card.
     enabled: (event) => parseHITLRequest(event?.value) !== null,
-    render: ({ event, resolve }) => {
+    render: ({ event, interrupts, resolve }) => {
+      // Standard path: every open approval, each with its id.
+      const items = interrupts.flatMap((i) => {
+        const request = parseHITLRequest(i);
+        return request ? [{ id: i.id, request }] : [];
+      });
+      if (items.length > 1) {
+        return <ApprovalStack items={items} onDecide={(id, decisions) => void resolve({ decisions }, id)} />;
+      }
+      if (items.length === 1) {
+        const [only] = items;
+        return <ApprovalCard request={only.request} onDecide={(decisions) => void resolve({ decisions }, only.id)} />;
+      }
+      // Legacy on_interrupt (a reopened conversation replaying a pending approval).
       const request = parseHITLRequest(event?.value);
       if (!request) return <></>;
-      return (
-        <ApprovalCard request={request} onDecide={(decisions) => void resolve({ decisions })} />
-      );
+      return <ApprovalCard request={request} onDecide={(decisions) => void resolve({ decisions })} />;
     },
   });
 }

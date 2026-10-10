@@ -85,7 +85,7 @@ export function snapshotFromLangGraph(state: LangGraphThreadState): ThreadSnapsh
 export function historyEvents(
   threadId: string,
   snapshot: ThreadSnapshot,
-  pendingInterrupts: unknown[] = [],
+  pendingInterrupts: PendingInterrupt[] = [],
 ): BaseEvent[] {
   const runId = `history-${threadId}`;
   const events: BaseEvent[] = [
@@ -93,19 +93,39 @@ export function historyEvents(
     { type: EventType.MESSAGES_SNAPSHOT, messages: snapshot.messages } as BaseEvent,
     { type: EventType.STATE_SNAPSHOT, snapshot: snapshot.state } as BaseEvent,
   ];
-  // A thread paused on an approval: re-raise it the way @ag-ui/langgraph does,
-  // so the card reappears and the decision still resumes the run.
-  for (const value of pendingInterrupts) {
+  // A thread paused on approvals: re-raise them the way @ag-ui/langgraph does
+  // with emitInterruptOutcome — the legacy events, then RUN_FINISHED carrying
+  // every open interrupt with its id — so all the cards reappear (several when
+  // parallel researchers each paused) and the answers still resume the run.
+  for (const { value } of pendingInterrupts) {
     events.push({
       type: EventType.CUSTOM,
       name: "on_interrupt",
       value: typeof value === "string" ? value : JSON.stringify(value),
     } as BaseEvent);
   }
-  events.push({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
+  const withIds = pendingInterrupts.filter((i): i is Required<PendingInterrupt> => typeof i.id === "string");
+  events.push({
+    type: EventType.RUN_FINISHED,
+    threadId,
+    runId,
+    ...(withIds.length
+      ? {
+          outcome: {
+            type: "interrupt",
+            interrupts: withIds.map((i) => ({ id: i.id, reason: "langgraph:interrupt", metadata: { langgraph: { raw: i.value } } })),
+          },
+        }
+      : {}),
+  } as BaseEvent);
   return events;
 }
 
-export function pendingInterruptsOf(state: LangGraphThreadState | undefined): unknown[] {
-  return (state?.tasks ?? []).flatMap((t) => (t.interrupts ?? []).map((i) => i.value));
+export interface PendingInterrupt {
+  id?: string;
+  value: unknown;
+}
+
+export function pendingInterruptsOf(state: LangGraphThreadState | undefined): PendingInterrupt[] {
+  return (state?.tasks ?? []).flatMap((t) => (t.interrupts ?? []).map((i) => ({ id: i.id, value: i.value })));
 }

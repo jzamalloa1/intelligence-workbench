@@ -47,6 +47,10 @@ function buildAgent() {
     // Only needed once the agent is deployed (`mda deploy`), where identity.py's
     // auth.langsmith_api_key() expects it as x-api-key. Harmless locally.
     langsmithApiKey: process.env.LANGSMITH_API_KEY,
+    // RUN_FINISHED carries every open interrupt with its id, so parallel
+    // researchers' approvals arrive together (ApprovalStack). The legacy
+    // on_interrupt events still go out too.
+    emitInterruptOutcome: true,
   });
 }
 

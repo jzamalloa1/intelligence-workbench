@@ -14,10 +14,12 @@ import { useState } from "react";
  *        the same order. LangChain's HumanInTheLoopMiddleware does
  *        `interrupt(hitl_request)["decisions"]` and raises if the count differs.
  *
- * `@ag-ui/langgraph` emits interrupts as the *legacy* `on_interrupt` custom
- * event and JSON-stringifies the value, so the payload arrives as a string and
- * `interrupt` is null — hence parsing `event.value` here rather than reading
- * the standard `interrupt` prop.
+ * Two shapes reach it. The standard path (`emitInterruptOutcome` in route.ts)
+ * hands over AG-UI `Interrupt`s, each with its own id and the raw request under
+ * `metadata.langgraph.raw` — several at once when parallel researchers each
+ * pause, shown together by `ApprovalStack`. The legacy `on_interrupt` event
+ * (still used when a reopened conversation replays a pending approval) carries
+ * the request JSON-stringified. `parseHITLRequest` accepts all of these.
  */
 
 type DecisionType = "approve" | "edit" | "reject" | "respond";
@@ -38,7 +40,7 @@ export interface HITLRequest {
   review_configs: ReviewConfig[];
 }
 
-type Decision =
+export type Decision =
   | { type: "approve" }
   | { type: "reject"; message?: string }
   | { type: "edit"; edited_action: { name: string; args: Record<string, unknown> } };
@@ -54,6 +56,9 @@ export function parseHITLRequest(value: unknown): HITLRequest | null {
     }
   }
   if (!raw || typeof raw !== "object") return null;
+  // An AG-UI Interrupt from the standard path: the request is its raw value.
+  const wrapped = (raw as { metadata?: { langgraph?: { raw?: unknown } } }).metadata?.langgraph;
+  if (wrapped && "raw" in wrapped) return parseHITLRequest(wrapped.raw);
   const obj = raw as Partial<HITLRequest>;
   if (!Array.isArray(obj.action_requests) || obj.action_requests.length === 0) return null;
   return {
@@ -127,9 +132,15 @@ const DECIDED_LABEL: Record<Decision["type"], string> = {
 export function ApprovalCard({
   request,
   onDecide,
+  intro = true,
+  othersPending = 0,
 }: {
   request: HITLRequest;
   onDecide: (decisions: Decision[]) => void;
+  /** The explanation of what the sandbox is. Shown once by a stack, not per card. */
+  intro?: boolean;
+  /** Other approvals still open beside this one (in a stack). */
+  othersPending?: number;
 }) {
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [editing, setEditing] = useState<number | null>(null);
@@ -159,9 +170,11 @@ export function ApprovalCard({
     return (
       <div className="my-2 flex items-center gap-2 rounded-xl border border-wb-border bg-wb-panel-alt px-3.5 py-2.5 text-[12px] text-wb-muted">
         <span aria-hidden className={`size-1.5 rounded-full ${allRejected ? "bg-wb-faint" : "bg-wb-good"}`} />
-        {allRejected
-          ? "Got it — the assistant will continue without running it."
-          : "Thanks — the assistant is continuing."}
+        {othersPending > 0
+          ? `${allRejected ? "Won't run." : "Approved."} Waiting for your answer on ${othersPending} more.`
+          : allRejected
+            ? "Got it — the assistant will continue without running it."
+            : "Thanks — the assistant is continuing."}
       </div>
     );
   }
@@ -181,11 +194,7 @@ export function ApprovalCard({
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-[11.5px] leading-relaxed text-wb-muted">
-          The assistant wants to run something in its sandbox — a private, temporary computer
-          used only for this conversation. It can’t reach your own computer or files. Nothing
-          runs until you choose.
-        </p>
+        {intro ? <SandboxIntro /> : null}
       </header>
 
       <div className="flex flex-col divide-y divide-wb-border">
@@ -369,5 +378,94 @@ function Action({
     >
       {children}
     </button>
+  );
+}
+
+function SandboxIntro() {
+  return (
+    <p className="mt-1 text-[11.5px] leading-relaxed text-wb-muted">
+      The assistant wants to run something in its sandbox — a private, temporary computer used
+      only for this conversation. It can’t reach your own computer or files. Nothing runs until
+      you choose.
+    </p>
+  );
+}
+
+export interface PendingApproval {
+  /** The interrupt id — the answer is addressed to it. */
+  id: string;
+  request: HITLRequest;
+}
+
+/**
+ * Several approvals open at once — typically parallel researchers each wanting
+ * to run a command. All are shown together; each is answered on its own card
+ * or all at once. The run resumes once every one has an answer (CopilotKit's
+ * interrupt state collects them and sends a single resume).
+ */
+export function ApprovalStack({
+  items,
+  onDecide,
+}: {
+  items: PendingApproval[];
+  onDecide: (id: string, decisions: Decision[]) => void;
+}) {
+  const [decided, setDecided] = useState<Set<string>>(new Set());
+  const open = items.filter((i) => !decided.has(i.id));
+  const canApproveAll = open.every((i) =>
+    i.request.action_requests.every((a) => {
+      const config = i.request.review_configs.find((c) => c.action_name === a.name);
+      return (config?.allowed_decisions ?? ["approve", "reject"]).includes("approve");
+    }),
+  );
+  const total = items.reduce((n, i) => n + i.request.action_requests.length, 0);
+
+  function answer(id: string, decisions: Decision[]) {
+    setDecided((prev) => new Set(prev).add(id));
+    onDecide(id, decisions);
+  }
+
+  if (open.length === 0) {
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-xl border border-wb-border bg-wb-panel-alt px-3.5 py-2.5 text-[12px] text-wb-muted">
+        <span aria-hidden className="size-1.5 rounded-full bg-wb-good" />
+        Thanks — the assistant is continuing.
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 rounded-2xl border border-wb-warn/40 bg-wb-panel-alt/60 p-2.5" data-testid="approval-stack">
+      <div className="flex flex-wrap items-center gap-2 px-1.5 pt-0.5">
+        <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-wb-warn" />
+        <h3 className="text-[12.5px] font-semibold text-wb-text">
+          {items.length} approvals waiting
+          {total > items.length ? <span className="font-normal text-wb-faint"> · {total} commands</span> : null}
+        </h3>
+        {canApproveAll ? (
+          <button
+            type="button"
+            onClick={() =>
+              open.forEach((i) => answer(i.id, i.request.action_requests.map(() => ({ type: "approve" }) as Decision)))
+            }
+            className="ml-auto rounded-lg bg-wb-accent px-3 py-1.5 text-[11.5px] font-medium text-wb-panel transition-opacity hover:opacity-90"
+          >
+            Run all {open.length}
+          </button>
+        ) : null}
+      </div>
+      <div className="px-1.5">
+        <SandboxIntro />
+      </div>
+      {items.map((i) => (
+        <ApprovalCard
+          key={i.id}
+          request={i.request}
+          intro={false}
+          othersPending={open.filter((o) => o.id !== i.id).length}
+          onDecide={(decisions) => answer(i.id, decisions)}
+        />
+      ))}
+    </div>
   );
 }

@@ -6,6 +6,10 @@
  * back is checked against the HumanInTheLoopMiddleware contract
  * (`{decisions: [one per action request]}`).
  *
+ * Also the standard path (route.ts sets `emitInterruptOutcome`): two approvals
+ * open at once, as when parallel researchers each pause — shown as one stack,
+ * answered all at once or one by one, resumed with one `resume[]` entry each.
+ *
  *   node scripts/verify-approval.mjs
  */
 import { chromium } from "playwright-core";
@@ -47,13 +51,33 @@ function interruptStream(threadId, runId) {
   return ev.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
 }
 
+const second = {
+  action_requests: [{ name: "execute", args: { command: "ls /research" }, description: "Run a command in the sandbox.\n- Uses /research" }],
+  review_configs: [{ action_name: "execute", allowed_decisions: ["approve", "edit", "reject"] }],
+};
+
+/** What @ag-ui/langgraph emits with emitInterruptOutcome: legacy events, then the outcome. */
+function standardStream(threadId, runId) {
+  const lg = (id, raw) => ({ id, reason: "langgraph:interrupt", metadata: { langgraph: { raw, ns: [`tools:${id}`], resumable: true, when: "during" } } });
+  const ev = [
+    { type: "RUN_STARTED", threadId, runId },
+    { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Two researchers want to run commands." },
+    { type: "TEXT_MESSAGE_END", messageId: "m1" },
+    { type: "CUSTOM", name: "on_interrupt", value: JSON.stringify(hitlRequest) },
+    { type: "CUSTOM", name: "on_interrupt", value: JSON.stringify(second) },
+    { type: "RUN_FINISHED", threadId, runId, outcome: { type: "interrupt", interrupts: [lg("int-a", hitlRequest), lg("int-b", second)] } },
+  ];
+  return ev.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+}
+
 const failures = [];
 const check = (ok, msg) => {
   console.log(`${ok ? "PASS" : "FAIL"} — ${msg}`);
   if (!ok) failures.push(msg);
 };
 
-async function scenario(name, act) {
+async function scenario(name, act, firstStream = interruptStream) {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
@@ -64,7 +88,7 @@ async function scenario(name, act) {
     runs.push(body);
     const stream =
       runs.length === 1
-        ? interruptStream(body.threadId, body.runId)
+        ? firstStream(body.threadId, body.runId)
         : `data: ${JSON.stringify({ type: "RUN_STARTED", threadId: body.threadId, runId: body.runId })}\n\n` +
           `data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: body.threadId, runId: body.runId })}\n\n`;
     await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: stream });
@@ -75,7 +99,7 @@ async function scenario(name, act) {
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.locator("textarea").first().fill(`approval check: ${name}`);
   await page.locator("textarea").first().press("Enter");
-  await page.getByText("Your OK is needed").waitFor({ timeout: 15000 });
+  await page.getByText("Your OK is needed").first().waitFor({ timeout: 15000 });
   await act(page, runs);
   check(errors.length === 0, `${name}: no page errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);
   await browser.close();
@@ -124,6 +148,48 @@ await scenario("edit", async (page, runs) => {
   const d = resumeOf(runs[1])?.decisions?.[0];
   check(d?.type === "edit" && d.edited_action?.args?.command === "python3 -c 'print(1)'", "edit sends the new command");
 });
+
+const byId = (run) => Object.fromEntries((run?.resume ?? []).map((e) => [e.interruptId, e]));
+
+await scenario(
+  "run all",
+  async (page, runs) => {
+    const stack = page.getByTestId("approval-stack");
+    check(await stack.getByText("2 approvals waiting").isVisible(), "run all: both approvals shown together");
+    await page.screenshot({ path: `${OUT}/approval-stack.png` });
+    await stack.getByRole("button", { name: "Run all 2" }).click();
+    await page.waitForTimeout(800);
+    const r = byId(runs[1]);
+    check(
+      r["int-a"]?.status === "resolved" &&
+        JSON.stringify(r["int-a"].payload) === JSON.stringify({ decisions: [{ type: "approve" }] }) &&
+        JSON.stringify(r["int-b"]?.payload) === JSON.stringify({ decisions: [{ type: "approve" }] }),
+      `run all: one resume entry per interrupt, each approved (got ${JSON.stringify(runs[1]?.resume)})`,
+    );
+    check(runs[1]?.forwardedProps?.command?.resume === undefined, "run all: no bare legacy resume");
+  },
+  standardStream,
+);
+
+await scenario(
+  "one by one",
+  async (page, runs) => {
+    const stack = page.getByTestId("approval-stack");
+    await stack.getByRole("button", { name: "Run it" }).first().click();
+    await page.waitForTimeout(600);
+    check(runs.length === 1, "one by one: nothing resumes until every approval has an answer");
+    check(await stack.getByText("Waiting for your answer on 1 more.").isVisible(), "one by one: the answered card says what it is waiting for");
+    await stack.getByRole("button", { name: "Don’t run" }).click();
+    await stack.getByRole("button", { name: "Don’t run it" }).click();
+    await page.waitForTimeout(800);
+    const r = byId(runs[1]);
+    check(
+      r["int-a"]?.payload?.decisions?.[0]?.type === "approve" && r["int-b"]?.payload?.decisions?.[0]?.type === "reject",
+      `one by one: each answer goes to its own interrupt (got ${JSON.stringify(runs[1]?.resume)})`,
+    );
+  },
+  standardStream,
+);
 
 console.log(failures.length ? `\n${failures.length} FAILED` : "\nALL PASS", `— screenshot in ${OUT}`);
 process.exit(failures.length ? 1 : 0);

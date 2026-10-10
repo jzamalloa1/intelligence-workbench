@@ -183,10 +183,14 @@ raises on a count mismatch. Decision shapes: `{type:"approve"}`,
 **Several approvals at once.** Researchers inherit the lead's `interrupt_on` (deepagents'
 default), so two researchers running in parallel can each pause on their own `execute`, which
 leaves two interrupts pending. LangGraph refuses a bare resume in that case ("you must specify
-the interrupt id"). The card shows one approval at a time. `WorkbenchLangGraphAgent.prepareStream`
-looks up the thread's pending interrupts and sends the decision as `{interrupt_id: decision}`
-for the one the card showed (`web/src/lib/interrupt-resume.ts`). The others stay pending, and
-their cards follow one by one.
+the interrupt id"). `route.ts` turns on `emitInterruptOutcome`, so the run's end carries every
+open interrupt with its id. The chat shows them together in one stack, with **Run all** or one
+answer per card, and CopilotKit sends a single `resume[]` once each has an answer.
+`WorkbenchLangGraphAgent.buildCommandResumeFromAgui` turns that into LangGraph's
+`{interrupt_id: decision}` map. The adapter's own `__agui_resume_map__` wrapper is read only by
+the Python AG-UI server, not by a plain LangGraph server. A reopened conversation replays all
+pending approvals with their ids too. The older one-at-a-time path (`addressResume`) stays as a
+fallback. `verify-approval.mjs` and `verify-adapter.ts` cover both.
 
 > **Use `useInterrupt`, not `useHumanInTheLoop`.** They sound interchangeable and are not:
 > `useHumanInTheLoop` registers a *frontend tool* whose handler happens to be a human, while

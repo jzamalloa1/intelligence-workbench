@@ -179,7 +179,9 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   On 1.78.0 that is `@ag-ui/langgraph` 0.0.44 and `@ag-ui/client`/`core` 1.0.2 (all exact pins).
 - **`route.ts` uses `WorkbenchLangGraphAgent`** (`src/lib/workbench-agent.ts`), not the stock
   class. It fills the null name the adapter gives `write_todos`/`task` late starts — fatal under
-  AG-UI 1.0's strict event checks — and addresses multi-interrupt resumes. On every
+  AG-UI 1.0's strict event checks — and builds LangGraph's `{interrupt_id: decision}` resume map
+  for the standard interrupt path (`emitInterruptOutcome: true` in route.ts; several approvals
+  show as one stack). On every
   `@ag-ui/langgraph` bump run `npx tsx scripts/verify-adapter.ts`: it replays synthetic events
   through the stock adapter and ours and says which patches are still needed (ARCHITECTURE §4d).
 - **Sign-in is a demo** (`lib/users.ts`, httpOnly `wb_user` cookie). `route.ts` stamps

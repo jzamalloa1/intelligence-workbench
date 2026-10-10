@@ -15,7 +15,7 @@ function headers(): Record<string, string> {
 
 export interface LangGraphThreadState {
   values: Record<string, unknown> & { messages?: unknown[] };
-  tasks?: { interrupts?: { value?: unknown }[] }[];
+  tasks?: { interrupts?: { id?: string; value?: unknown }[] }[];
 }
 
 /** The thread's current state, or undefined if the agent server doesn't have it. */
