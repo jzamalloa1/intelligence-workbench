@@ -191,10 +191,13 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs` — run them after UI changes —
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs` — run them after UI changes —
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
+- **Subagent calls are tagged with their `task` call's id** (`subagentRunId`), matched from the
+  lead's `on_tool_start` for `task`. The research lanes depend on it. The tracker is seeded with
+  each run's input so earlier turns' subagent work survives the next snapshot.
 - **Subagent messages never go back to the lead.** `SubagentTracker` re-inserts subagent tool
   calls into every message snapshot so the UI keeps them; `withoutSubagentMessages` must strip
   them from each run's input, or the adapter writes them into the lead's thread.

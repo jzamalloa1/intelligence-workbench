@@ -185,3 +185,46 @@ body {
     margin: 16mm;
   }
 }
+
+/*
+  Motion for live agent work (research lanes, banner). An indeterminate shimmer
+  in the lane's own colour while a subagent works, and a short rise as new
+  content arrives. Both are off for people who ask for reduced motion.
+*/
+@keyframes wb-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes wb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.wb-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--lane, var(--wb-accent)) 18%, transparent) 0%,
+    var(--lane, var(--wb-accent)) 50%,
+    color-mix(in oklch, var(--lane, var(--wb-accent)) 18%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: wb-shimmer 1.6s linear infinite;
+}
+.wb-rise {
+  animation: wb-rise 0.28s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-shimmer,
+  .wb-rise {
+    animation: none;
+  }
+}

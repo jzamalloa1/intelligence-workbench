@@ -20,7 +20,7 @@ const LEAD_NS = { metadata: { langgraph_checkpoint_ns: "tools:lead-step" } };
 const SUB_NS = { metadata: { langgraph_checkpoint_ns: "tools:task-1|tools:inner" } };
 const note = "# Are ETF inflows driving it?\n\n## Findings\n- Inflows rose\n\n## Sources\n- [Example](https://example.com)\n";
 
-function stream(threadId, runId) {
+function stream(threadId, runId, userId = "user-1") {
   const ev = [];
   const push = (e) => ev.push(e);
   const call = (id, name, args, result, rawEvent, parentMessageId = null) => {
@@ -49,7 +49,7 @@ function stream(threadId, runId) {
   push({
     type: "MESSAGES_SNAPSHOT",
     messages: [
-      { id: "user-1", role: "user", content: "subagent check" },
+      { id: userId, role: "user", content: "subagent check" },
       {
         id: "lead-1",
         role: "assistant",
@@ -77,7 +77,7 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 await page.route("**/api/copilotkit/agent/workbench/run", async (route) => {
   const body = JSON.parse(route.request().postData() || "{}");
-  await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: stream(body.threadId, body.runId) });
+  await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: stream(body.threadId, body.runId, body.messages?.find((m) => m.role === "user")?.id) });
 });
 
 await page.request.post(`${BASE}/api/session`, { data: { userId: "alex" } });

@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CopilotChat,
+  messageGroup,
+  messageRow,
   useAgent,
   UseAgentUpdate,
   useFrontendTool,
   useInterrupt,
   useRenderTool,
+  type MessageRow,
 } from "@copilotkit/react-core/v2";
 import { z } from "zod";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
@@ -16,14 +19,10 @@ import { Panel } from "@/components/Panel";
 import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
+import { DelegationGroup, ResearchBanner, TaskLaneCard } from "@/components/ResearchLanes";
+import { deriveLanes, LanesContext, taskCallIds, withoutSubagentRows } from "@/lib/lanes";
 import { Workspace } from "@/components/Workspace";
-import {
-  chartSlug,
-  deriveFromMessages,
-  readTodos,
-  subagentToolCallIds,
-  type Chart,
-} from "@/lib/workbench";
+import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
 import { INSPECTOR_ENABLED } from "@/lib/config";
 import { useRunnerMode } from "@/lib/runner-mode";
 import {
@@ -93,17 +92,15 @@ function Workbench() {
   // Override CopilotKit's built-in wildcard tool renderer. Its default shows a
   // bare row per tool call that says nothing about what the agent did; this
   // renders the tool, its target, and an expandable result instead. Subagent
-  // tool calls (often 50+ searches per run) are left out of the chat — the
-  // Activity panel shows them. Re-registered when that set changes.
-  const subagentCalls = useMemo(() => subagentToolCallIds(messages), [messages]);
-  const subagentKey = [...subagentCalls].join(",");
-  useRenderTool(
-    {
-      name: "*",
-      render: (p) => (subagentCalls.has(p.toolCallId) ? null : <ToolCard {...p} />),
-    },
-    [subagentKey],
-  );
+  // tool calls never reach it: the chat drops them (`withoutSubagentRows`) and
+  // each delegation renders as a research lane instead.
+  useRenderTool({ name: "*", render: (p) => <ToolCard {...p} /> });
+  useRenderTool({
+    name: "task",
+    parameters: z.object({ description: z.string().optional(), subagent_type: z.string().optional() }),
+    render: (p) => <TaskLaneCard toolCallId={p.toolCallId} args={p.parameters} status={p.status} />,
+  });
+  const lanes = useMemo(() => deriveLanes(messages), [messages]);
   const running = agent?.isRunning ?? false;
 
   const todos = useMemo(() => readTodos(agent?.state), [agent?.state]);
@@ -121,6 +118,7 @@ function Workbench() {
 
   return (
     <ChartLibraryContext.Provider value={charts}>
+      <LanesContext.Provider value={lanes}>
       <div className="flex h-dvh flex-col overflow-hidden">
         <Header
           running={running}
@@ -143,8 +141,11 @@ function Workbench() {
           ) : null}
 
           <Panel title="Conversation" className="min-h-0">
-            <div className="h-full">
-              <CopilotChat agentId="workbench" />
+            <div className="flex h-full flex-col">
+              <ResearchBanner />
+              <div className="min-h-0 flex-1">
+                <CopilotChat agentId="workbench" messageView={MESSAGE_VIEW} />
+              </div>
             </div>
           </Panel>
 
@@ -169,9 +170,25 @@ function Workbench() {
         </main>
         <ChartDialog />
       </div>
+      </LanesContext.Provider>
     </ChartLibraryContext.Provider>
   );
 }
+
+/**
+ * A message that delegates to several subagents at once is framed as one
+ * "parallel research" group; everything else renders on its own. Module-level
+ * and stable, as CopilotChat memoizes on these functions.
+ */
+function groupDelegations(messages: Parameters<typeof withoutSubagentRows>[0]): MessageRow[] {
+  return messages.map((m) =>
+    taskCallIds(m).length > 1
+      ? messageGroup({ key: m.id, messages: [m], wrapper: DelegationGroup })
+      : messageRow(m),
+  );
+}
+
+const MESSAGE_VIEW = { transformMessages: withoutSubagentRows, groupMessages: groupDelegations };
 
 /**
  * Keeps the history sidebar current: a run starting registers a new

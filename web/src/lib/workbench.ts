@@ -331,16 +331,6 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
   };
 }
 
-/** Tool calls made inside subagents — shown in the side panels, not the chat. */
-export function subagentToolCallIds(messages: readonly Message[]): Set<string> {
-  const ids = new Set<string>();
-  for (const msg of messages) {
-    const m = msg as Message & { subagentRunId?: string | null; toolCalls?: { id: string }[] };
-    if (typeof m.subagentRunId === "string") for (const c of m.toolCalls ?? []) ids.add(c.id);
-  }
-  return ids;
-}
-
 export function readTodos(state: unknown): Todo[] {
   const todos = (state as { todos?: unknown } | undefined)?.todos;
   if (!Array.isArray(todos)) return [];

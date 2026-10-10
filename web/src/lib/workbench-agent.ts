@@ -40,7 +40,7 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
    *        this the next turn would write subagent calls into the lead's thread.
    */
   override run(input: RunAgentInput): ReturnType<LangGraphAgent["run"]> {
-    const tracker = new SubagentTracker();
+    const tracker = new SubagentTracker(input.messages);
     const { input: cleaned, previous } = takeUsageFromInput(withoutSubagentMessages(input));
     const usage = new UsageTracker(previous);
     const source = super.run(cleaned);

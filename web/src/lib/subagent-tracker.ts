@@ -21,6 +21,19 @@
  *  - every MESSAGES_SNAPSHOT gets those calls re-inserted, each right after the
  *    lead message whose `task` call started it, with the same ids the client
  *    already holds — so nothing moves and nothing is dropped.
+ *
+ * Which `task` a subagent call belongs to: the lead's `on_tool_start` for
+ * `task` runs in the very namespace the subagent then runs under
+ * (`tools:<id>`), and carries the task's arguments. Matching those to the
+ * streamed `task` call gives the call's id, which becomes the `subagentRunId`
+ * — so the UI can draw one lane per delegation, labelled by its task, and the
+ * link survives in saved history. If no match is found the namespace is used.
+ *
+ * Earlier turns: a new run starts a new tracker, and the adapter's snapshots
+ * hold the lead's thread only. The tracker is seeded with the run's input
+ * messages, so subagent work from previous turns is re-inserted too, and
+ * `task` calls still in flight (a run resumed after an approval) can be
+ * matched again.
  */
 
 import { EventType, type RunAgentInput } from "@ag-ui/client";
@@ -40,6 +53,21 @@ interface SubagentCall {
 type AnyEvent = { type: string; [key: string]: unknown };
 type AnyMessage = { id: string; role: string; [key: string]: unknown };
 
+interface TaskCall {
+  toolCallId: string;
+  /** The lead message that holds the call. */
+  messageId?: string;
+  args: string;
+  /** Namespace of the subagent run this call started, once matched. */
+  namespace?: string;
+}
+
+/** Messages carried over from an earlier turn, re-inserted after `anchor`. */
+interface CarriedBlock {
+  anchor?: string;
+  messages: AnyMessage[];
+}
+
 export const SUBAGENT_MESSAGE_PREFIX = "subagent:";
 
 function checkpointNamespace(event: AnyEvent): string {
@@ -48,23 +76,75 @@ function checkpointNamespace(event: AnyEvent): string {
   return typeof ns === "string" ? ns : "";
 }
 
+function isSubagentMessage(m: AnyMessage): boolean {
+  return m.subagentRunId != null || m.id.startsWith(SUBAGENT_MESSAGE_PREFIX);
+}
+
+function parseArgs(json: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(json);
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export class SubagentTracker {
   private calls = new Map<string, SubagentCall>();
+  private tasks = new Map<string, TaskCall>();
+  /** Subagent namespace (`tools:<id>`) → the `task` call that started it. */
+  private taskByNamespace = new Map<string, string>();
+  private carried: CarriedBlock[] = [];
   private leadTaskMessage?: string;
+
+  constructor(previous: readonly unknown[] = []) {
+    const messages = previous as AnyMessage[];
+    const subagentCallIds = new Set(
+      messages
+        .filter(isSubagentMessage)
+        .flatMap((m) => ((m.toolCalls as { id: string }[] | undefined) ?? []).map((c) => c.id)),
+    );
+    const answered = new Set(messages.filter((m) => m.role === "tool").map((m) => m.toolCallId as string));
+    let anchor: string | undefined;
+    let block: CarriedBlock | undefined;
+    for (const m of messages) {
+      const isSub =
+        isSubagentMessage(m) || (m.role === "tool" && subagentCallIds.has(m.toolCallId as string));
+      if (isSub) {
+        if (!block || block.anchor !== anchor) this.carried.push((block = { anchor, messages: [] }));
+        block.messages.push(m);
+        continue;
+      }
+      anchor = m.id;
+      block = undefined;
+      // A `task` still without a result is in flight: its subagent may resume
+      // in this run and has to be matched again.
+      for (const c of (m.toolCalls as { id: string; function?: { name?: string; arguments?: string } }[] | undefined) ?? []) {
+        if (c.function?.name === "task" && !answered.has(c.id)) {
+          this.tasks.set(c.id, { toolCallId: c.id, messageId: m.id, args: c.function.arguments ?? "" });
+        }
+      }
+    }
+  }
 
   process<E>(event: E): E {
     const e = event as unknown as AnyEvent;
     switch (e.type) {
+      case EventType.RAW:
+        this.observe(e.event);
+        return event;
       case EventType.TOOL_CALL_START: {
         const ns = checkpointNamespace(e);
         const id = e.toolCallId as string;
         if (ns.includes("|")) {
+          const namespace = ns.split("|")[0];
+          const taskId = this.taskByNamespace.get(namespace);
           const call: SubagentCall = {
             toolCallId: id,
             name: String(e.toolCallName ?? ""),
             args: "",
-            subagentRunId: ns.split("|")[0],
-            anchor: this.leadTaskMessage,
+            subagentRunId: taskId ?? namespace,
+            anchor: (taskId && this.tasks.get(taskId)?.messageId) || this.leadTaskMessage,
           };
           this.calls.set(id, call);
           return {
@@ -73,14 +153,18 @@ export class SubagentTracker {
             subagentRunId: call.subagentRunId,
           } as E;
         }
-        if (e.toolCallName === "task" && typeof e.parentMessageId === "string") {
-          this.leadTaskMessage = e.parentMessageId;
+        if (e.toolCallName === "task") {
+          const messageId = typeof e.parentMessageId === "string" ? e.parentMessageId : undefined;
+          this.tasks.set(id, { toolCallId: id, messageId, args: "" });
+          if (messageId) this.leadTaskMessage = messageId;
         }
         return event;
       }
       case EventType.TOOL_CALL_ARGS: {
         const call = this.calls.get(e.toolCallId as string);
         if (call) call.args += String(e.delta ?? "");
+        const task = this.tasks.get(e.toolCallId as string);
+        if (task) task.args += String(e.delta ?? "");
         return event;
       }
       case EventType.TOOL_CALL_RESULT: {
@@ -102,13 +186,77 @@ export class SubagentTracker {
     }
   }
 
+  /**
+   * The lead's `task` tool starting: its namespace is the one its subagent will
+   * run under. Match it to a streamed `task` call by its arguments; the end
+   * event names the call outright, which settles any match the start missed.
+   */
+  private observe(raw: unknown) {
+    const ev = raw as {
+      event?: string;
+      name?: string;
+      metadata?: { langgraph_checkpoint_ns?: unknown };
+      data?: { input?: Record<string, unknown>; output?: { update?: { messages?: { tool_call_id?: string }[] } } };
+    };
+    if (ev?.name !== "task") return;
+    const ns = ev.metadata?.langgraph_checkpoint_ns;
+    if (typeof ns !== "string" || !ns || ns.includes("|")) return;
+
+    if (ev.event === "on_tool_start" && !this.taskByNamespace.has(ns)) {
+      const input = ev.data?.input ?? {};
+      const match = [...this.tasks.values()].find((t) => {
+        if (t.namespace) return false;
+        const args = parseArgs(t.args);
+        return (
+          args.description === input.description &&
+          (input.subagent_type === undefined || args.subagent_type === input.subagent_type)
+        );
+      });
+      if (match) this.link(ns, match.toolCallId);
+    } else if (ev.event === "on_tool_end" && !this.taskByNamespace.has(ns)) {
+      const id = ev.data?.output?.update?.messages?.find((m) => m.tool_call_id)?.tool_call_id;
+      if (id && this.tasks.has(id)) this.link(ns, id);
+    }
+  }
+
+  private link(namespace: string, taskId: string) {
+    this.taskByNamespace.set(namespace, taskId);
+    const task = this.tasks.get(taskId);
+    if (task) task.namespace = namespace;
+    // Calls already seen under the bare namespace move to the task's lane.
+    for (const call of this.calls.values()) {
+      if (call.subagentRunId === namespace) {
+        call.subagentRunId = taskId;
+        call.anchor = task?.messageId ?? call.anchor;
+      }
+    }
+  }
+
   private withSubagentCalls(messages: AnyMessage[]): AnyMessage[] {
-    if (this.calls.size === 0) return messages;
+    if (this.calls.size === 0 && this.carried.length === 0) return messages;
     const present = new Set(messages.map((m) => m.id));
     const out = [...messages];
     // Where each anchor's inserted block currently ends, so calls from the same
     // delegation stay in the order they happened.
     const insertAt = new Map<string, number>();
+    const insert = (anchor: string | undefined, block: AnyMessage[]) => {
+      const key = anchor ?? "";
+      let index = insertAt.get(key);
+      if (index === undefined) {
+        const anchorIndex = anchor ? out.findIndex((m) => m.id === anchor) : -1;
+        index = anchorIndex >= 0 ? anchorIndex + 1 : out.length;
+      }
+      out.splice(index, 0, ...block);
+      // Shift every recorded position at or after this one, then advance ours.
+      for (const [k, v] of insertAt) if (v >= index && k !== key) insertAt.set(k, v + block.length);
+      insertAt.set(key, index + block.length);
+    };
+
+    // Earlier turns first, so a resumed delegation's new calls follow its old ones.
+    for (const carried of this.carried) {
+      const missing = carried.messages.filter((m) => !present.has(m.id));
+      if (missing.length) insert(carried.anchor, missing);
+    }
 
     for (const call of this.calls.values()) {
       const messageId = SUBAGENT_MESSAGE_PREFIX + call.toolCallId;
@@ -132,16 +280,7 @@ export class SubagentTracker {
         });
       }
 
-      const key = call.anchor ?? "";
-      let index = insertAt.get(key);
-      if (index === undefined) {
-        const anchorIndex = call.anchor ? out.findIndex((m) => m.id === call.anchor) : -1;
-        index = anchorIndex >= 0 ? anchorIndex + 1 : out.length;
-      }
-      out.splice(index, 0, ...block);
-      // Shift every recorded position at or after this one, then advance ours.
-      for (const [k, v] of insertAt) if (v >= index && k !== key) insertAt.set(k, v + block.length);
-      insertAt.set(key, index + block.length);
+      insert(call.anchor, block);
     }
     return out;
   }
@@ -154,9 +293,9 @@ export class SubagentTracker {
  * would write subagent calls into the lead's thread.
  */
 export function withoutSubagentMessages(input: RunAgentInput): RunAgentInput {
-  type Tagged = { id: string; role: string; subagentRunId?: unknown; toolCallId?: string; toolCalls?: { id: string }[] };
+  type Tagged = AnyMessage & { toolCallId?: string; toolCalls?: { id: string }[] };
   const messages = input.messages as unknown as Tagged[];
-  const isSubagent = (m: Tagged) => m.subagentRunId != null || m.id.startsWith(SUBAGENT_MESSAGE_PREFIX);
+  const isSubagent = isSubagentMessage;
   const subagentCallIds = new Set(
     messages.filter(isSubagent).flatMap((m) => (m.toolCalls ?? []).map((c) => c.id)),
   );

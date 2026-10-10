@@ -381,11 +381,11 @@ lead's LangGraph thread, because deepagents runs a subagent inline inside the le
 ```mermaid
 flowchart LR
     ADAPTER["@ag-ui/langgraph<br/>streams subagent tool calls,<br/>then sends MESSAGES_SNAPSHOTs<br/>built from the lead's thread only"] --> TRACK["SubagentTracker<br/>in WorkbenchLangGraphAgent"]
-    TRACK -->|"tags each subagent call<br/>subagentRunId = its task"| OUT["Every snapshot gets the<br/>subagent calls re-inserted,<br/>right after their task call"]
+    TRACK -->|"tags each subagent call<br/>subagentRunId = its task call id<br/>(matched on the lead's task start)"| OUT["Every snapshot gets the<br/>subagent calls re-inserted,<br/>right after their task call,<br/>plus earlier turns' calls"]
     OUT --> UI["Browser"]
     OUT --> MEM["In-memory replay"]
     OUT --> DB[("History snapshot")]
-    UI --> PANELS["Workspace: /research/ files, by a researcher<br/>Activity: searches, tagged subagent<br/>Chat: hidden — lead's messages only"]
+    UI --> PANELS["Workspace: /research/ files, by a researcher<br/>Activity: searches, tagged subagent<br/>Chat: one research lane per task"]
     UI -->|"next message"| STRIP["withoutSubagentMessages<br/>strips them from the input"]
     STRIP --> LEADTHREAD["Lead's thread stays lead-only"]
 ```
@@ -396,6 +396,15 @@ inbound strip matters just as much: the adapter sends every client message its t
 hold as new input, so re-inserted subagent calls would otherwise be written into the lead's
 thread on the next turn. Verified on a recorded real run (55 researcher calls kept, next-turn
 input 135 → 25 messages) and with `web/scripts/verify-subagents.mjs` (zero API cost).
+
+**Across turns, and per task.** Each run starts a fresh tracker, and the adapter's snapshots
+hold the lead's thread only, so until 2026-10-09 a follow-up question erased the previous turn's
+subagent work from the panels. The tracker is now seeded with the run's input messages and
+re-inserts earlier turns' calls too. It also tags each call with the id of the `task` that
+started it: the lead's `on_tool_start` for `task` runs in exactly the namespace its subagent then
+runs under, and carries the task's arguments to match on. That id is what the research lanes
+in the chat are built from. `web/scripts/verify-lanes.mjs` checks both (zero API cost), and fails
+without the seeding.
 
 - **Each conversation already has its own sandbox** — MDA scopes the sandbox per thread (the
   only scope it accepts), so "per-user folders" is really "per-user conversations": `/reports/`
@@ -444,7 +453,8 @@ thread.
 | `agent_core/approvals.py` | Plain-language approval text for `execute` — the `interrupt_on` description function |
 | `web/src/components/ApprovalCard.tsx` | The `interrupt_on` approval UI — renders the plain-language description, emits `{decisions:[…]}` |
 | `web/src/lib/usage-tracker.ts`, `web/src/lib/pricing.ts` | Context and Cost meters: per-call usage from each model call's own report, carried in agent state as `workbenchUsage`; verified prices applied in the browser |
-| `web/src/lib/subagent-tracker.ts` | Keeps subagent tool calls through message snapshots (outbound) and out of the lead's thread (inbound) — see "How subagent work is kept" |
+| `web/src/lib/subagent-tracker.ts` | Keeps subagent tool calls through message snapshots (outbound) and out of the lead's thread (inbound), tags each with its `task` call — see "How subagent work is kept" |
+| `web/src/lib/lanes.ts`, `web/src/components/ResearchLanes.tsx` | Research lanes: derived from the tagged messages; rendered for `task` calls, grouped with `messageView.groupMessages` |
 | `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), for the `focus_panel` frontend tool |
 | `web/src/lib/users.ts`, `web/src/components/SessionGate.tsx` | Demo sign-in; owns the open conversation id (`?t=` in the URL) and hands it to `<CopilotKit threadId>` |
 | `web/src/lib/server/history-runner.ts`, `history-store.ts` | Per-user history: registers and snapshots conversations, restores them on reopen |
@@ -527,7 +537,7 @@ sequenceDiagram
 | Capability | Where you see it |
 |---|---|
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
-| Subagents | Subagent Timeline — swimlanes, nested tool calls |
+| Subagents | Research lanes in the chat — one live card per delegation (status, latest step, searches, notes, answer), a progress-framed group for parallel delegations, a banner naming who is working; Activity Timeline for the full call list |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
 | Skills (progressive disclosure) | Skills strip (Plan panel) — every available skill, and which ones this conversation loaded |
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
