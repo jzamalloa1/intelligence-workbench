@@ -59,15 +59,18 @@ agent = define_deep_agent(
     #      (verified: managed_deepagents has zero references to it, and the
     #      compiled agent's tool list lacked write_todos until this was added).
     #      The Plan Board panel has no data source without it.
-    #   3. Provider prompt   — appends provider steering, so it must run after
-    #      anything else that contributes to the system prompt.
+    #   3. Provider prompt   — appends provider steering to the system prompt.
+    #      Since deepagents 0.7.23 (MDA 0.9) the SkillsMiddleware it adds runs
+    #      *after* all of ours, so the skills list follows this steering block.
     #   4. Friendly errors   — must sit OUTSIDE the model call it protects, so it
     #      wraps everything downstream of it and catches provider failures before
     #      they abort the run and surface as a bare "An internal error occurred".
     #   5. Call limit        — the ceiling on the whole run (before/after hooks).
-    #   6. Provider switch   — innermost, next to the model: swaps in the
-    #      conversation's provider (x-llm-provider) per call, inside Friendly
-    #      errors so a failure on the swapped provider is still caught.
+    #   6. Provider switch   — innermost of ours: swaps in the conversation's
+    #      provider (x-llm-provider) per call, inside Friendly errors so a
+    #      failure on the swapped provider is still caught. deepagents' own tail
+    #      (skills, prompt caching, memory, approvals) still runs inside it; its
+    #      Anthropic cache tags no-op once the model has been swapped to OpenAI.
     middleware=[
         CopilotKitMiddleware(),
         TodoListMiddleware(),

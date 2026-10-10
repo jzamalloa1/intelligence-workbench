@@ -40,10 +40,12 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
 
 - **Python only via uv.** `uv sync` / `uv run …` inside `agent/`. Never bare `python` or `pip`.
 - **Python 3.14**, uv **≥ 0.12**.
-- **pydantic is constrained `<2.14.0a0`** in `agent/pyproject.toml` (`[tool.uv]
-  constraint-dependencies`) — otherwise a plain upgrade lands on a pydantic *beta* via
-  copilotkit's direct `pydantic-core` requirement. **Lift it once pydantic 2.14.0 final ships.**
-  Do not replace it with `prerelease = "disallow"`: that breaks `mda dev` (ARCHITECTURE §6).
+- **No pre-releases in `agent/uv.lock`.** After any upgrade:
+  `grep -E '^version = "[0-9.]+(a|b|rc|\.dev)[0-9]+"' agent/uv.lock` must print nothing. A
+  pydantic beta once came in sideways (ARCHITECTURE §6); the scoped constraint that blocked it
+  was lifted on 2026-10-09 when 2.14.0 final shipped. If it recurs, re-add
+  `[tool.uv] constraint-dependencies` for that one package — never `prerelease = "disallow"`,
+  which breaks `mda dev`.
 - **`mda build .` (and every `mda dev` start) empties `agent/.mda/build/`** — which is also where
   `mda dev` keeps its thread persistence (`.langgraph_api/`). Plain `mda build .` under a running
   server wipes every local conversation on the agent side. For compile checks use
@@ -122,7 +124,10 @@ deploy time.
 - Author-set fields only: `name`, `model`, `tools`, `middleware`, `subagents`, `permissions`,
   `interrupt_on`, `response_format`, `context_schema`, `cache`, `debug`, `metadata`,
   `disable_memory`. (Read off `inspect.signature(define_deep_agent)` on 0.7.2, re-confirmed
-  unchanged on 0.8.3 — re-check it after an SDK bump rather than trusting this list.)
+  on 0.9.0 — re-check it after an SDK bump rather than trusting this list.) 0.9 adds
+  `instructions`, `mcp`, `sandbox`, `skills`, `memory`, but **only for a factory entrypoint**
+  (`agent` as a function of the runtime, resolved per run); a static definition setting them
+  fails at build time. We use a static definition.
 - `name=` required, static string, `[A-Za-z][A-Za-z0-9_-]*`. It becomes the LangGraph assistant
   ID — and therefore CopilotKit's `graphId`.
 - **MCP is back as of 0.7.0** — `define_mcp(...)` with a `servers` map (verified present on

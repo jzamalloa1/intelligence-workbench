@@ -119,10 +119,10 @@ Every model call above — lead **and** subagents — passes through the same mi
 |---|---|---|---|
 | 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
 | 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
-| 3 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | Must run *after* anything else that contributes to the system prompt, so its addition is the final one. Subagents don't inherit it — the researcher's spec lists it too |
+| 3 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
 | 4 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
 | 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
-| 6 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost, next to the model, so Friendly errors still wraps a failure on the swapped provider. The researcher has its own instance (`"worker"`, non-streaming) |
+| 6 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
 
 ### The subagent math
 

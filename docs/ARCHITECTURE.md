@@ -585,15 +585,15 @@ trusting. The MDA row below is the proof: 0.7.3 → 0.8.3 was **four releases in
 
 | Package | Installed | Latest | Note |
 |---|---|---|---|
-| `managed-deepagents` (CLI + project) | 0.8.3 | 0.8.3 | 0.7.3 → 0.8.3 on 09-26 — see below |
-| `deepagents` | resolved by `mda dev` | 0.7.19 | not ours to pin — the compiled build asks for `>=0.7.5` |
+| `managed-deepagents` (CLI + project) | 0.9.0 | 0.9.0 | 0.8.3 → 0.9.0 on 10-09 — see below |
+| `deepagents` | 0.7.23 | 0.7.23 | now a declared dependency of managed-deepagents (`>=0.7.13,<1`) |
 | `copilotkit` (Python) | 0.1.96 | 0.1.96 | current |
-| `langchain` | 1.4.2 | 1.4.2 | 1.4 is now stable — the old `1.4.0a2` warning below was about the alpha |
-| `langchain-core` | 1.6.5 | 1.6.5 | current |
-| `langchain-anthropic` | 1.7.4 | 1.7.4 | current |
-| `langchain-openai` | 1.6.6 | 1.6.6 | current |
-| `langgraph` | 1.2.12 | 1.2.12 | current |
-| `pydantic` | 2.13.5 | 2.13.5 (stable) | **constrained** `<2.14.0a0` — see below |
+| `langchain` | 1.4.4 | 1.4.4 | 1.4 is stable — the old `1.4.0a2` warning below was about the alpha |
+| `langchain-core` | 1.6.9 | 1.6.9 | current |
+| `langchain-anthropic` | 1.7.5 | 1.7.5 | current |
+| `langchain-openai` | 1.7.0 | 1.7.0 | current |
+| `langgraph` | 1.2.14 | 1.2.14 | current |
+| `pydantic` | 2.14.0 | 2.14.0 | stable final; the `<2.14.0a0` constraint is lifted — see below |
 | `@copilotkit/react-core` / `react-ui` / `runtime` | 1.78.0 | 1.78.0 | bumped from 1.74.0 on 10-09 |
 | `@ag-ui/langgraph` | 0.0.44 | 0.0.45 | exactly what `@copilotkit/runtime@1.78.0` depends on — 0.0.45 waits for a runtime that pins it |
 | `@ag-ui/client` / `@ag-ui/core` | 1.0.2 | 1.0.2 | `core` is now a direct dependency (imported by `lib/workbench.ts`, previously hoisted) |
@@ -640,6 +640,28 @@ unchanged** (`reconnectGiveUpMs ?? 60_000`, still only on the internal
 the default runner (§4d). `INTERRUPT_EVENT_NAME` is still `"on_interrupt"`, which the Milestone 6
 approval card depends on.
 
+**MDA 0.8.3 → 0.9.0 (2026-10-09).** Read off a diff of the two wheels, then built and run.
+- **Nothing in our project changes.** `define_deep_agent` gains `instructions`, `mcp`,
+  `sandbox`, `skills`, `memory` — factory-entrypoint only; a static definition setting them
+  fails the build. Our static call passes unchanged; `mda build --out` compiles clean.
+- **Dependencies are declared now** (deepagents `>=0.7.13,<1`, langchain `>=1.4.3`, langgraph,
+  langgraph-sdk), Python `>=3.11`. The lock moved to deepagents 0.7.23, langchain 1.4.4,
+  langchain-core 1.6.9, langchain-anthropic 1.7.5, langchain-openai 1.7.0, langgraph 1.2.14.
+- **deepagents 0.7.23 puts `SkillsMiddleware` after all author middleware** (innermost, before
+  prompt caching), so the skills list now follows `ProviderPromptMiddleware`'s steering block.
+  Harmless; the comment in `agent.py` no longer claims ours runs last. Subagents can each get
+  their own skills (`skills:` in the spec), and skills can reveal tools once read.
+- **New, unused for now:** factory agents (per-run skills/memory/sandbox selection); a runtime
+  `schedules` API (create/list/update/delete, user or agent owned — only on a deployment,
+  never under `mda dev`); per-user memory reachable through a trusted-backend identity.
+  Milestone 8 material.
+- **Workarounds unchanged:** subagents still run via `invoke` (keep `disable_streaming`), parallel
+  subagents still inherit `interrupt_on`, and keyed multi-interrupt resume is still ours.
+- **The upgrade wiped `.mda/build/.langgraph_api`** (full rebuild on the new runtime). Local
+  history survived in the web app's SQLite store, which is the point of it.
+- Verified: `import agent`, `mda build --out`, `mda dev` serves `workbench`, and one live
+  "reply OK" run through the web route (1 call; usage tracked with its cache write).
+
 **MDA 0.7.3 → 0.8.3 (2026-09-26).** The package repo is private, so this was read off a diff
 of the two published wheels. What touches us:
 
@@ -672,7 +694,8 @@ stable-*numbered* core, 2.49.0, which is only paired with pydantic 2.14.0b2, so 
 langgraph-api needs `opentelemetry-semantic-conventions`, which only ever publishes `0.NNbN`
 versions. The fix is scoped instead — `constraint-dependencies = ["pydantic<2.14.0a0"]` in
 `agent/pyproject.toml` — and must be **lifted once pydantic 2.14.0 final ships**, or it will
-hold us back from it.
+hold us back from it. *(Lifted 2026-10-09: 2.14.0 final resolves with pydantic-core 2.50.0, and
+the lock holds no pre-release.)*
 
 **0.7.3 (2026-09-21).** Patch bump, nothing breaking. The one line that touches us:
 *"Remove MDA's default recursion limit"* — the managed runtime no longer imposes its own
