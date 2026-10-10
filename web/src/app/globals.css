@@ -222,9 +222,22 @@ body {
 .wb-rise {
   animation: wb-rise 0.28s ease-out both;
 }
+/* Text that shimmers while the model is thinking. */
+.wb-shimmer-text {
+  background: linear-gradient(90deg, var(--wb-muted) 0%, var(--wb-accent) 50%, var(--wb-muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: wb-shimmer 1.8s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .wb-shimmer,
-  .wb-rise {
+  .wb-rise,
+  .wb-shimmer-text {
     animation: none;
+  }
+  .wb-shimmer-text {
+    color: var(--wb-muted);
   }
 }

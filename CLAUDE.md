@@ -193,10 +193,14 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs` — run them after UI changes —
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs` — run them after UI changes —
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
+- **The lead's reasoning is shown, not added.** Opus 5 thinks by default with `display:
+  "omitted"`; `models.py` sets `thinking={"type": "adaptive", "display": "summarized"}` on the
+  lead (same bill, visible summary). Don't turn it on for subagents: they run hidden and
+  non-streaming. Reasoning messages are display-only and stripped from run input.
 - **Regenerate / Edit rewind the thread** via `forwardedProps.workbenchRewind` →
   `WorkbenchLangGraphAgent.rewind` → the adapter's `prepareRegenerateStream`. The marker must be
   stripped before the run request (the adapter spreads forwardedProps into it).

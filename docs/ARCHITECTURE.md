@@ -607,6 +607,15 @@ either past what `@copilotkit/runtime` itself depends on reintroduces the duplic
 `@ag-ui/client` crash in §4d. Verified by reading `@copilotkit/runtime@1.74.0`'s own
 dependencies, and after install `npm ls` shows a single `@ag-ui/client@0.0.59`.
 
+**Opus 5 was already thinking, invisibly (2026-10-09).** Per Anthropic's thinking docs, Opus 5
+(and Sonnet 5) have adaptive thinking on by default with `display: "omitted"`: thinking is billed
+but the block comes back empty. That is why no reasoning ever showed. `display: "summarized"`
+changes only visibility, not billing, so the lead now sets it (`agent_core/models.py`). Live: a
+coin-change question streamed REASONING_* events (a summary) and then the answer, with
+`output_tokens` 711 including the thinking. A trivial question produced no thinking block at all,
+since adaptive thinking decides per request. The adapter's final MESSAGES_SNAPSHOT omits reasoning,
+so `SubagentTracker` re-inserts it.
+
 **CopilotKit 1.74 → 1.78, AG-UI 0.0.x → 1.0 (2026-10-09).** Read off source diffs of the
 installed and new tarballs. What touches us:
 

@@ -21,6 +21,7 @@ import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { DelegationGroup, ResearchBanner, TaskLaneCard } from "@/components/ResearchLanes";
 import { EditBar, useMessageActions, useWorkbenchSuggestions, WelcomeHero } from "@/components/ChatExtras";
+import { ReasoningCard } from "@/components/ReasoningCard";
 import { deriveLanes, LanesContext, taskCallIds, withoutSubagentRows } from "@/lib/lanes";
 import { Workspace } from "@/components/Workspace";
 import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
@@ -125,6 +126,7 @@ function Workbench() {
       ...MESSAGE_VIEW,
       assistantMessage: { onRegenerate },
       userMessage: { onEditMessage },
+      reasoningMessage: ReasoningCard,
     }),
     [onRegenerate, onEditMessage],
   );

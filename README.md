@@ -216,6 +216,19 @@ go deeper on a researcher's question. They are computed in the browser. CopilotK
 suggestions would cost an extra model call through the deep agent every turn. Checked by
 `web/scripts/verify-chat.mjs` (zero API cost).
 
+**You see how it reasoned.** The lead model's thinking summary renders as a **Reasoning**
+card above its answer: it shimmers "Thinking…" while it streams, then folds away. This costs
+nothing extra on Anthropic. Opus 5 already thinks adaptively by default with `display: "omitted"`
+(billed, never shown), and billing is identical with `display: "summarized"`, which is all
+`agent_core/models.py` changes, for the lead only. On OpenAI the lead asks for
+`reasoning.summary: "auto"`; that path hasn't been run end to end (no OpenAI credits). Thinking
+tokens were already part of `output_tokens`, so the Cost meter is unchanged. Opus decides per
+request whether to think, so many quick replies have no card. The summaries are display-only:
+`SubagentTracker` keeps them through snapshots (the adapter's snapshots drop them), and
+`withoutReasoningMessages` keeps them out of the next run's input, since the thread already holds
+the real, signed thinking blocks. Verified live (a reasoning summary streamed before the answer)
+and with `web/scripts/verify-reasoning.mjs` (zero API cost).
+
 **You let the agent move the UI.** `useFrontendTool({name: "focus_panel", …})` registers a tool
 that executes *in the browser*, not in the agent process, so the agent can switch the Sandbox
 panel to Charts after rendering one, or open a file it just wrote — instead of describing where
@@ -558,6 +571,7 @@ sequenceDiagram
 | Capability | Where you see it |
 |---|---|
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
+| Reasoning | Reasoning card above each answer the lead thought about — its thinking summary, streamed live, folded when done |
 | Chat UX | Welcome screen with starter prompts, follow-up suggestion chips, Regenerate and Edit (the thread forks from the question's checkpoint) |
 | Subagents | Research lanes in the chat — one live card per delegation (status, latest step, searches, notes, answer), a progress-framed group for parallel delegations, a banner naming who is working; Activity Timeline for the full call list |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |

@@ -2,7 +2,7 @@ import { type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
 import { Observable } from "rxjs";
 import { addressResume, resumeMap, type PendingInterrupt } from "./interrupt-resume";
-import { SubagentTracker, withoutSubagentMessages } from "./subagent-tracker";
+import { SubagentTracker, withoutReasoningMessages, withoutSubagentMessages } from "./subagent-tracker";
 import { takeUsageFromInput, UsageTracker } from "./usage-tracker";
 import { USER_HEADER } from "./users";
 
@@ -41,7 +41,7 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
    */
   override run(input: RunAgentInput): ReturnType<LangGraphAgent["run"]> {
     const tracker = new SubagentTracker(input.messages);
-    const { input: cleaned, previous } = takeUsageFromInput(withoutSubagentMessages(input));
+    const { input: cleaned, previous } = takeUsageFromInput(withoutReasoningMessages(withoutSubagentMessages(input)));
     const usage = new UsageTracker(previous);
     const source = super.run(cleaned);
     return new Observable((subscriber) => {

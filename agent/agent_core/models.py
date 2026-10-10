@@ -33,6 +33,12 @@ class Tier:
     # langchain-openai's docstring still lists the older four values, but the field
     # is a pass-through string, so the newer levels work.
     effort: str | None = None
+    # Return a readable summary of the model's reasoning, for the chat's
+    # reasoning cards. Lead only — subagents run hidden and non-streaming.
+    # Anthropic: Opus 5 already thinks by default with `display: "omitted"`, and
+    # billing is identical either way — "summarized" only makes it visible.
+    # OpenAI: reasoning tokens are billed whether or not a summary is returned.
+    show_reasoning: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,7 +53,7 @@ PROFILES: dict[Provider, ModelProfile] = {
     "anthropic": ModelProfile(
         provider="anthropic",
         # Opus 5 plans and synthesizes; thinking is adaptive and on by default.
-        lead=Tier(model="claude-opus-5"),
+        lead=Tier(model="claude-opus-5", show_reasoning=True),
         worker=Tier(model="claude-sonnet-5"),
         cheap=Tier(model="claude-haiku-4-5"),
     ),
@@ -55,7 +61,7 @@ PROFILES: dict[Provider, ModelProfile] = {
         provider="openai",
         # GPT-5.6 family: sol (flagship) / terra (balanced, $2-$12 per MTok) /
         # luna (high-volume, $0.20-$1.20). Terra leads; luna absorbs fan-out.
-        lead=Tier(model="gpt-5.6-terra", effort="medium"),
+        lead=Tier(model="gpt-5.6-terra", effort="medium", show_reasoning=True),
         worker=Tier(model="gpt-5.6-terra", effort="low"),
         cheap=Tier(model="gpt-5.6-luna", effort="low"),
     ),
@@ -134,7 +140,11 @@ def build_model(role: Role, *, stream: bool = True, provider: Provider | None = 
     tier = _tier(role, profile.provider)
 
     if profile.provider == "anthropic":
-        return ChatAnthropic(model=tier.model, disable_streaming=not stream)
+        extra: dict = {}
+        if tier.show_reasoning and stream:
+            # The shape langchain-anthropic itself sends for Opus 4.7+/Sonnet 5.
+            extra["thinking"] = {"type": "adaptive", "display": "summarized"}
+        return ChatAnthropic(model=tier.model, disable_streaming=not stream, **extra)
 
     # OpenAI: GPT-5.6 guidance is to use the Responses API for reasoning,
     # tool-calling, and multi-turn work — which is all three of what we do here.
@@ -145,6 +155,8 @@ def build_model(role: Role, *, stream: bool = True, provider: Provider | None = 
     }
     if tier.effort:
         kwargs["reasoning"] = {"effort": tier.effort}
+        if tier.show_reasoning and stream:
+            kwargs["reasoning"]["summary"] = "auto"
     return ChatOpenAI(**kwargs)
 
 

@@ -29,6 +29,11 @@
  * — so the UI can draw one lane per delegation, labelled by its task, and the
  * link survives in saved history. If no match is found the namespace is used.
  *
+ * Reasoning: the lead's thinking summary streams as REASONING_* events, but the
+ * adapter's snapshots don't carry it, so a saved or reopened conversation would
+ * lose it. Reasoning messages are kept the same way, each re-inserted right
+ * before the message that followed it.
+ *
  * Earlier turns: a new run starts a new tracker, and the adapter's snapshots
  * hold the lead's thread only. The tracker is seeded with the run's input
  * messages, so subagent work from previous turns is re-inserted too, and
@@ -60,6 +65,12 @@ interface TaskCall {
   args: string;
   /** Namespace of the subagent run this call started, once matched. */
   namespace?: string;
+}
+
+/** A reasoning message, re-inserted right before the message that followed it. */
+interface Reasoning {
+  message: AnyMessage;
+  before?: string;
 }
 
 /** Messages carried over from an earlier turn, re-inserted after `anchor`. */
@@ -95,6 +106,9 @@ export class SubagentTracker {
   /** Subagent namespace (`tools:<id>`) → the `task` call that started it. */
   private taskByNamespace = new Map<string, string>();
   private carried: CarriedBlock[] = [];
+  private reasoning = new Map<string, Reasoning>();
+  /** Reasoning that has ended and waits for the message it precedes. */
+  private awaitingNext: Reasoning[] = [];
   private leadTaskMessage?: string;
 
   constructor(previous: readonly unknown[] = []) {
@@ -107,7 +121,16 @@ export class SubagentTracker {
     const answered = new Set(messages.filter((m) => m.role === "tool").map((m) => m.toolCallId as string));
     let anchor: string | undefined;
     let block: CarriedBlock | undefined;
+    let pendingReasoning: Reasoning[] = [];
     for (const m of messages) {
+      if (m.role === "reasoning") {
+        const r: Reasoning = { message: m };
+        this.reasoning.set(m.id, r);
+        pendingReasoning.push(r);
+        continue;
+      }
+      for (const r of pendingReasoning) r.before = m.id;
+      pendingReasoning = [];
       const isSub =
         isSubagentMessage(m) || (m.role === "tool" && subagentCallIds.has(m.toolCallId as string));
       if (isSub) {
@@ -133,6 +156,24 @@ export class SubagentTracker {
       case EventType.RAW:
         this.observe(e.event);
         return event;
+      case EventType.REASONING_MESSAGE_START: {
+        const id = e.messageId as string;
+        this.reasoning.set(id, { message: { id, role: "reasoning", content: "" } });
+        return event;
+      }
+      case EventType.REASONING_MESSAGE_CONTENT: {
+        const r = this.reasoning.get(e.messageId as string);
+        if (r) r.message.content = String(r.message.content ?? "") + String(e.delta ?? "");
+        return event;
+      }
+      case EventType.REASONING_MESSAGE_END: {
+        const r = this.reasoning.get(e.messageId as string);
+        if (r) this.awaitingNext.push(r);
+        return event;
+      }
+      case EventType.TEXT_MESSAGE_START:
+        this.settleReasoning(e.messageId as string);
+        return event;
       case EventType.TOOL_CALL_START: {
         const ns = checkpointNamespace(e);
         const id = e.toolCallId as string;
@@ -153,6 +194,7 @@ export class SubagentTracker {
             subagentRunId: call.subagentRunId,
           } as E;
         }
+        if (typeof e.parentMessageId === "string") this.settleReasoning(e.parentMessageId);
         if (e.toolCallName === "task") {
           const messageId = typeof e.parentMessageId === "string" ? e.parentMessageId : undefined;
           this.tasks.set(id, { toolCallId: id, messageId, args: "" });
@@ -180,7 +222,7 @@ export class SubagentTracker {
         return { ...e, subagentRunId: call.subagentRunId } as E;
       }
       case EventType.MESSAGES_SNAPSHOT:
-        return { ...e, messages: this.withSubagentCalls(e.messages as AnyMessage[]) } as E;
+        return { ...e, messages: this.withReasoning(this.withSubagentCalls(e.messages as AnyMessage[])) } as E;
       default:
         return event;
     }
@@ -230,6 +272,23 @@ export class SubagentTracker {
         call.anchor = task?.messageId ?? call.anchor;
       }
     }
+  }
+
+  private settleReasoning(nextMessageId: string) {
+    for (const r of this.awaitingNext) r.before = nextMessageId;
+    this.awaitingNext = [];
+  }
+
+  private withReasoning(messages: AnyMessage[]): AnyMessage[] {
+    if (this.reasoning.size === 0) return messages;
+    const out = [...messages];
+    const present = new Set(out.map((m) => m.id));
+    for (const r of this.reasoning.values()) {
+      if (present.has(r.message.id) || !String(r.message.content ?? "").trim()) continue;
+      const at = r.before ? out.findIndex((m) => m.id === r.before) : -1;
+      out.splice(at >= 0 ? at : out.length, 0, r.message);
+    }
+    return out;
   }
 
   private withSubagentCalls(messages: AnyMessage[]): AnyMessage[] {
@@ -305,4 +364,15 @@ export function withoutSubagentMessages(input: RunAgentInput): RunAgentInput {
   return kept.length === messages.length
     ? input
     : { ...input, messages: kept as unknown as RunAgentInput["messages"] };
+}
+
+/**
+ * Reasoning messages are display-only: the lead's thread already holds the real
+ * (signed) thinking blocks, so the summaries the browser shows are never sent
+ * back as input.
+ */
+export function withoutReasoningMessages(input: RunAgentInput): RunAgentInput {
+  const messages = input.messages as unknown as AnyMessage[];
+  const kept = messages.filter((m) => m.role !== "reasoning");
+  return kept.length === messages.length ? input : { ...input, messages: kept as unknown as RunAgentInput["messages"] };
 }
