@@ -41,11 +41,9 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
 - **Python only via uv.** `uv sync` / `uv run …` inside `agent/`. Never bare `python` or `pip`.
 - **Python 3.14**, uv **≥ 0.12**.
 - **No pre-releases in `agent/uv.lock`.** After any upgrade:
-  `grep -E '^version = "[0-9.]+(a|b|rc|\.dev)[0-9]+"' agent/uv.lock` must print nothing. A
-  pydantic beta once came in sideways (ARCHITECTURE §6); the scoped constraint that blocked it
-  was lifted on 2026-10-09 when 2.14.0 final shipped. If it recurs, re-add
-  `[tool.uv] constraint-dependencies` for that one package — never `prerelease = "disallow"`,
-  which breaks `mda dev`.
+  `grep -E '^version = "[0-9.]+(a|b|rc|\.dev)[0-9]+"' agent/uv.lock` must print nothing. If a
+  pre-release comes in through a dependency, add `[tool.uv] constraint-dependencies` for that one
+  package (ARCHITECTURE §6) — never `prerelease = "disallow"`, which breaks `mda dev`.
 - **`mda build .` (and every `mda dev` start) empties `agent/.mda/build/`** — which is also where
   `mda dev` keeps its thread persistence (`.langgraph_api/`). Plain `mda build .` under a running
   server wipes every local conversation on the agent side. For compile checks use
@@ -53,11 +51,9 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
   instead (ARCHITECTURE §4d).
 - **Upgrading MDA touches two surfaces**: `uv tool upgrade managed-deepagents` (the `mda` CLI)
   *and* the `agent/pyproject.toml` pin + `uv lock --upgrade-package managed-deepagents`. Then
-  `mda build .` — the CLI validates things the Python package still accepts.
-- **Never install with `--prerelease allow`.** The private-beta docs said to; the current
-  quickstart no longer does (re-checked 2026-09-11 — the docs now agree with us). Stable
-  `managed-deepagents` exists, and the flag is global in uv — it will pull `langchain` into an
-  alpha. Install the CLI as:
+  `mda build . --out <scratch dir>` — the CLI validates things the Python package still accepts.
+- **Never install with `--prerelease allow`.** Stable `managed-deepagents` exists, and the flag
+  is global in uv — it pulls `langchain` into an alpha (ARCHITECTURE §6). Install the CLI as:
   ```bash
   uv tool install --python 3.14 managed-deepagents
   ```
@@ -79,7 +75,7 @@ MDA loads the project `.env` and it **overrides** exported shell variables, so
 That is only the *default* now: the header's provider toggle sends `x-llm-provider` per
 conversation and `ProviderSwitchMiddleware` swaps models per call (README § Provider toggle).
 Anything that names "the provider" at run time must use `run_provider()`, never
-`active_provider()` — the latter is the `.env` default, and was wrong in the error messages.
+`active_provider()` — the latter is only the `.env` default.
 
 ### Environment gotcha
 
@@ -130,11 +126,10 @@ deploy time.
   fails at build time. We use a static definition.
 - `name=` required, static string, `[A-Za-z][A-Za-z0-9_-]*`. It becomes the LangGraph assistant
   ID — and therefore CopilotKit's `graphId`.
-- **MCP is back as of 0.7.0** — `define_mcp(...)` with a `servers` map (verified present on
-  0.7.2; `define_mcp_servers` is gone, `connectors.mcp` is a deprecated alias removed in
-  0.8.0). This project still uses **authored tools only** — that is now a choice, not a
-  platform limit. `connections` (workspace secrets / user-owned OAuth) also exists in 0.7.x
-  and is likewise unused here.
+- **MCP** is available as `define_mcp(...)` with a `servers` map (verified on 0.7.2;
+  `define_mcp_servers` and `connectors.mcp` no longer exist). This project uses **authored
+  tools only**, by choice. `connections` (workspace secrets / user-owned OAuth) is likewise
+  unused.
 - Schedules must be **static literals** — no env vars, function calls, or computed values.
 - **`memory.py` uses the 0.8 layer form**: `define_memory(agent=MemoryLayer())`. The 0.8 CLI
   rejects `scope="agent"` at build time. A per-caller `user=MemoryLayer()` layer exists as of
@@ -155,8 +150,10 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 
 - `agent_core/models.py` — the only place model IDs appear. Per-provider `ModelProfile` with
   `lead` / `worker` / `cheap` tiers, selected by `LLM_PROVIDER`.
-- `agent_core/prompts.py` — `CORE` (provider-neutral) + `DELTA[provider]`. Keep prompts **lean**;
-  both vendors' 2026 guidance is that over-specification costs quality.
+- `instructions.md` — the lead's system prompt (MDA syncs it; `system_prompt` can't be set in
+  `agent.py`). `agent_core/prompts.py` — `RESEARCHER` and the per-provider `PROVIDER_DELTA` that
+  `ProviderPromptMiddleware` appends. Keep prompts **lean**; both vendors' 2026 guidance is that
+  over-specification costs quality.
 - `tools/` — one module per tool group. `@tool(parse_docstring=True)`, unique names.
 - `middleware/` — order is explicit and never inferred.
 - `skills/<name>/SKILL.md` — frontmatter `name` must match the directory name.
@@ -213,7 +210,8 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **Mermaid diagrams in docs must render**: `node scripts/render-mermaid.mjs ../README.md` parses
   and draws every block with Mermaid 11 (GitHub's major). Use `<br/>` for line breaks in new
   labels; no backticks or `;` inside labels/messages — both broke diagrams once.
-- Tool-call noise is filtered **on the frontend** in `useRenderToolCall`. The
+- Tool calls are shaped **on the frontend**: the wildcard `useRenderTool({ name: "*" })` renders
+  each as a `ToolCard`, and `withoutSubagentRows` keeps subagent calls out of the chat. The
   `copilotkit_customize_config(emit_tool_calls=[...])` approach from CopilotKit's showcase is
   FastAPI-path-specific and does not apply here.
 
