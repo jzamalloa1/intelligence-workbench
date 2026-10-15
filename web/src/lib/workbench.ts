@@ -79,6 +79,7 @@ export interface Chart {
 const ACTIVITY_TOOLS = new Set([
   "task",
   "research",
+  "fetch_url",
   "execute",
   "grep",
   "glob",
@@ -140,6 +141,8 @@ export function summarizeTool(
       return str(args.description) ?? str(args.subagent_type) ?? "";
     case "research":
       return str(args.query) ?? "";
+    case "fetch_url":
+      return str(args.url) ?? "";
     case "execute":
       return str(args.command) ?? "";
     case "read_file":

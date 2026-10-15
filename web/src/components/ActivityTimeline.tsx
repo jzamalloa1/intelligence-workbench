@@ -44,6 +44,7 @@ export function ActivityTimeline({ activity }: { activity: Activity[] }) {
 const TOOL_TONE: Record<string, string> = {
   task: "text-wb-accent",
   research: "text-wb-good",
+  fetch_url: "text-wb-good",
   execute: "text-wb-warn",
 };
 

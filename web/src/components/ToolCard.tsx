@@ -21,6 +21,7 @@ type Status = "inProgress" | "executing" | "complete";
 const TOOL_TONE: Record<string, string> = {
   task: "text-wb-accent",
   research: "text-wb-good",
+  fetch_url: "text-wb-good",
   execute: "text-wb-warn",
   write_file: "text-wb-accent",
   edit_file: "text-wb-accent",

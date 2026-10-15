@@ -187,6 +187,21 @@ feature is gated per organization — without it every file operation raises
 `SandboxAuthenticationError: Sandbox feature is not enabled for this organization`,
 which surfaces as a generic "An internal error occurred" in the run stream.
 
+**Subagents get `execute` too, and inherit approvals.** deepagents builds each
+subagent on `FilesystemMiddleware`, so with a sandbox attached the researcher had a
+shell, gated by the lead's `interrupt_on`. When Tavily hit its plan limit,
+researchers curled pages instead, and parallel ones raised several approvals at
+once. A subagent spec's `tools` only adds, and deepagents' own tool exclusion
+(`_ToolExclusionMiddleware`) is keyed to a harness profile, chosen per *model*, so
+it can't target one subagent. `HideToolsMiddleware` (`middleware/tool_access.py`)
+does it per spec: it filters the tool out of every model request and refuses a call
+that names it anyway. A fake-model probe through the real deepagents assembly
+(`LocalShellBackend`) confirmed it: without the middleware the researcher is offered
+`execute` and a forced call runs after approval; with it, `execute` is not offered
+and a forced call still pauses for approval (inherited `interrupt_on` fires in
+`after_model`, before any tool hook) but is then refused, so nothing runs. Researchers
+read pages with `fetch_url` instead (`tools/fetch.py`).
+
 ## 4d. UI issues found by looking at it in a browser
 
 Verified with `web/scripts/inspect.mjs`, which drives the real page via

@@ -12,6 +12,8 @@ dependencies = [
     "langchain-openai>=1.6.0",
     # Web research.
     "tavily-python>=0.8.0",
+    # fetch_url (already pulled in by the provider SDKs; listed because we import it).
+    "httpx>=0.28",
 ]
 
 # NOTE: deliberately NOT using `--prerelease allow`. The private-beta docs recommended

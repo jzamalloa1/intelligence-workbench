@@ -84,6 +84,7 @@ function firstTurn(threadId, runId, finished) {
   sub(a, "a-s1", "research", { query: "Alpha Corp seat price" }, "sources…");
   sub(b, "b-s1", "research", { query: "Beta Inc share 2026" }, "sources…");
   sub(a, "a-s2", "research", { query: "Alpha Corp enterprise tier" }, "sources…");
+  sub(a, "a-f1", "fetch_url", { url: "https://alpha.example/pricing" }, "page text…");
   sub(a, "a-w1", "write_file", { file_path: "/research/alpha-pricing.md", content: "# Alpha" }, "ok");
   if (finished) {
     sub(b, "b-w1", "write_file", { file_path: "/research/beta-share.md", content: "# Beta" }, "ok");
@@ -185,12 +186,13 @@ try {
   check(await group.getByText("2 researchers · 2 of 2 done").isVisible(), "parallel delegation is framed with its progress");
   const alpha = lane("Research Alpha Corp pricing");
   const beta = lane("Research Beta Inc market share");
-  check(await alpha.getByText("2 searches · 1 note").isVisible(), "Alpha's lane counts its own work (2 searches, 1 note)");
+  check(await alpha.getByText("2 searches · 1 page read · 1 note").isVisible(), "Alpha's lane counts its own work (2 searches, 1 page read, 1 note)");
   check(await beta.getByText("1 search · 1 note").isVisible(), "Beta's lane counts its own work (1 search, 1 note)");
   check(await alpha.getByText("Alpha charges $20 per seat.").isVisible(), "a finished lane shows the researcher's answer");
   check(!(await chat.getByText("Alpha Corp seat price").isVisible()), "subagent searches are not chat rows");
-  await alpha.getByRole("button", { name: "Show 3 steps" }).click();
+  await alpha.getByRole("button", { name: "Show 4 steps" }).click();
   check(await alpha.getByText("Alpha Corp seat price").isVisible(), "expanding a lane lists its steps");
+  check(await alpha.getByText("https://alpha.example/pricing").isVisible(), "…a page read shows its URL");
   await page.screenshot({ path: `${OUT}/lanes-done.png` });
   await group.getByRole("button", { name: "Collapse" }).click();
   check(!(await alpha.isVisible()), "collapsing the group hides the lanes…");
@@ -206,7 +208,7 @@ try {
   await page.getByText("Follow-up answered.").first().waitFor();
   await page.waitForTimeout(1000);
   check(Array.isArray(followUpInput) && followUpInput.some((m) => m.subagentRunId === "task-a"), "subagent calls are tagged with their task's id");
-  check(await alpha.getByText("2 searches · 1 note").isVisible(), "after a follow-up, the first turn's lane keeps its work");
+  check(await alpha.getByText("2 searches · 1 page read · 1 note").isVisible(), "after a follow-up, the first turn's lane keeps its work");
   check(await activity.getByText("Alpha Corp seat price").isVisible(), "…and so does the Activity panel");
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);

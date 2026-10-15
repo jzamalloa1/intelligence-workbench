@@ -94,6 +94,7 @@ flowchart TD
     LEAD -->|"task"| SUB2["researcher subagent"]
     SUB1 -->|"research() ×2-3"| TAV["Tavily search\nmax_results=6"]
     SUB2 -->|"research() ×2-3"| TAV
+    SUB1 -->|"fetch_url — read a page in full"| WEB["Public web page<br/>read-only GET, no shell"]
     SUB1 -->|"write_file — exactly one notes file"| RES["/research/topic.md\nfindings, key numbers, sources"]
     SUB2 -->|"write_file"| RES
     SUB1 -->|"summary only"| LEAD
@@ -134,8 +135,23 @@ Every model call above — lead **and** subagents — passes through the same mi
   searches with different phrasing before concluding — insurance against one query wording
   missing good results, not a way to cover more ground. (`RESEARCHER` in `agent_core/prompts.py`)
 - **Per-search cap:** each `research()` call returns at most 6 sources (`tools/research.py`).
+- **Reading a page:** when a snippet isn't enough, a researcher reads the page itself with
+  `fetch_url` (`tools/fetch.py`): one GET, text back, public addresses only.
 - Total ground covered ≈ subagents × searches-per-subagent × 6 — tune the first two multipliers
   in the files above; the source-per-call cap is the `max_results=6` line in `tools/research.py`.
+
+### Researchers have no shell
+
+deepagents gives every subagent its filesystem tools, and with a sandbox attached that includes
+`execute`. The researcher's spec can only *add* tools, so `HideToolsMiddleware({"execute"})`
+(`middleware/tool_access.py`) takes it away: it removes `execute` from the tool list on every
+model call, and answers any call that names it anyway with an error instead of running it.
+
+Two reasons. Researchers read raw, untrusted web pages, and the agent that reads them shouldn't
+be the one that can run commands; the lead only ever sees their summaries. And approvals now
+come only from the lead, one decision about real analysis at a time, not "researcher 3 wants to
+curl a page". Researchers still inherit the lead's `interrupt_on`, so if the middleware were
+ever removed the shell would come back gated, not open.
 
 ### Why subagents don't stream token-by-token
 
@@ -180,9 +196,11 @@ resume payload for all three decisions.
 raises on a count mismatch. Decision shapes: `{type:"approve"}`,
 `{type:"reject", message?}`, `{type:"edit", edited_action:{name, args}}`.
 
-**Several approvals at once.** Researchers inherit the lead's `interrupt_on` (deepagents'
-default), so two researchers running in parallel can each pause on their own `execute`, which
-leaves two interrupts pending. LangGraph refuses a bare resume in that case ("you must specify
+**Several approvals at once.** Since researchers lost their shell (above), approvals come
+from the lead, but one model turn can still ask for more than one `execute`, and the stack
+below handles any number. It was built when researchers inherited `execute` and the lead's
+`interrupt_on`, so several running in parallel could each pause on their own command, which
+left several interrupts pending. LangGraph refuses a bare resume in that case ("you must specify
 the interrupt id"). `route.ts` turns on `emitInterruptOutcome`, so the run's end carries every
 open interrupt with its id. The chat shows them together in one stack, with **Run all** or one
 answer per card, and CopilotKit sends a single `resume[]` once each has an answer.
@@ -472,7 +490,9 @@ thread.
 | `agent_core/prompts.py` | `RESEARCHER` subagent prompt; per-provider `PROVIDER_DELTA` |
 | `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
 | `instructions.md` | The lead agent's system prompt — synced to Context Hub by MDA, not settable in `agent.py` |
-| `tools/research.py` | Tavily search — the only tool subagents get |
+| `tools/research.py` | Tavily search — lead and researchers |
+| `tools/fetch.py` | `fetch_url` — read one public page as text; researchers only. Refuses private/internal addresses, re-checked on every redirect |
+| `middleware/tool_access.py` | `HideToolsMiddleware` — takes `execute` away from the researcher (see § Researchers have no shell) |
 | `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
 | `skills/<name>/SKILL.md` | Procedures the lead loads when a task matches — see § Skills. Frontmatter `name` must equal the directory name |
@@ -557,7 +577,7 @@ sequenceDiagram
 | Name a skill can use | Where the lead gets it |
 |---|---|
 | `research`, `render_chart` | Our tools, `agent.py` |
-| `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card |
+| `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card. Researchers get the same set minus `execute` |
 | `task` | deepagents' subagent middleware — delegation to `researcher` |
 | `write_todos` | `TodoListMiddleware`, added in `agent.py` |
 | `focus_panel` | Frontend tool from the web app (CopilotKit) |

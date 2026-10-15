@@ -1,8 +1,9 @@
 /**
  * Addresses an approval decision to the interrupt it answers.
  *
- * Several approvals can be pending at once: researchers run in parallel, each
- * inherits the lead's `interrupt_on`, and each pauses on its own `execute`. A
+ * Several approvals can be pending at once — originally parallel researchers,
+ * each pausing on its own `execute` (they no longer have a shell; see
+ * agent/middleware/tool_access.py), and still any turn that asks for several. A
  * bare resume value is then refused by LangGraph ("When there are multiple
  * pending interrupts, you must specify the interrupt id when resuming").
  *

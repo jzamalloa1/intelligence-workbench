@@ -16,8 +16,8 @@ import { useState } from "react";
  *
  * Two shapes reach it. The standard path (`emitInterruptOutcome` in route.ts)
  * hands over AG-UI `Interrupt`s, each with its own id and the raw request under
- * `metadata.langgraph.raw` — several at once when parallel researchers each
- * pause, shown together by `ApprovalStack`. The legacy `on_interrupt` event
+ * `metadata.langgraph.raw` — several at once when one turn asks for more than
+ * one command, shown together by `ApprovalStack`. The legacy `on_interrupt` event
  * (still used when a reopened conversation replays a pending approval) carries
  * the request JSON-stringified. `parseHITLRequest` accepts all of these.
  */
@@ -398,8 +398,8 @@ export interface PendingApproval {
 }
 
 /**
- * Several approvals open at once — typically parallel researchers each wanting
- * to run a command. All are shown together; each is answered on its own card
+ * Several approvals open at once — the lead asking for more than one command in
+ * a turn. (Researchers used to raise them in parallel; they no longer have a shell.) All are shown together; each is answered on its own card
  * or all at once. The run resumes once every one has an answer (CopilotKit's
  * interrupt state collects them and sends a single resume).
  */

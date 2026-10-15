@@ -222,6 +222,11 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **`write_todos` must be added explicitly.** Neither MDA nor deepagents' default profile
   includes `TodoListMiddleware`. Without it in `agent.py` the tool does not exist and the Plan
   Board has no data. See ARCHITECTURE §4c.
+- **Researchers have no shell.** deepagents gives every subagent `execute` when a sandbox is
+  attached; `HideToolsMiddleware({"execute"})` in the researcher's spec removes it (filters the
+  tool list per model call and refuses a forced call). Keep it there, and keep `interrupt_on`
+  inherited so removing the middleware fails closed. Researchers read pages with `fetch_url`,
+  which must keep refusing non-public addresses.
 - **Files are not in agent state when a sandbox is attached.** Derive the Workspace panel from
   `write_file` / `edit_file` tool calls, not from state. `todos` *is* in state.
 

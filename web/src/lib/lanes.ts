@@ -31,6 +31,8 @@ export interface ResearchLane {
   status: LaneStatus;
   steps: LaneStep[];
   searches: number;
+  /** Pages read in full with `fetch_url`. */
+  pages: number;
   files: string[];
   /** The subagent's final answer, once the task has returned. */
   result?: string;
@@ -78,6 +80,7 @@ export function deriveLanes(messages: readonly Message[]): Map<string, ResearchL
         status: results.has(c.id) ? "done" : "starting",
         steps: [],
         searches: 0,
+        pages: 0,
         files: [],
         result: results.get(c.id),
       });
@@ -101,6 +104,7 @@ export function deriveLanes(messages: readonly Message[]): Map<string, ResearchL
       const a = args(c.function?.arguments);
       lane.steps.push({ id: c.id, tool, label: summarizeTool(tool, a), done: results.has(c.id) });
       if (tool === "research") lane.searches += 1;
+      if (tool === "fetch_url") lane.pages += 1;
       if ((tool === "write_file" || tool === "edit_file") && typeof a.file_path === "string" && !lane.files.includes(a.file_path)) {
         lane.files.push(a.file_path);
       }

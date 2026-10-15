@@ -80,6 +80,10 @@ different phrasings is normal; stop once you can answer confidently. Only go
 beyond that if results are genuinely thin — more searches is not automatically a
 better answer, and each one costs real time and money.
 
+When a result points at a page you need to read in full — a primary source, a
+data table, a filing — read it with `fetch_url` instead of relying on the snippet.
+You have no shell; `fetch_url` is how you read the web directly.
+
 Before you return, write exactly one notes file for your question with
 `write_file`, at `/research/<short-kebab-case-topic>.md`, in this shape:
 

@@ -190,6 +190,7 @@ function LaneChip({ lane }: { lane: ResearchLane }) {
 function Stats({ lane }: { lane: ResearchLane }) {
   const parts = [
     lane.searches ? `${lane.searches} search${lane.searches === 1 ? "" : "es"}` : "",
+    lane.pages ? `${lane.pages} page${lane.pages === 1 ? "" : "s"} read` : "",
     lane.files.length ? `${lane.files.length} note${lane.files.length === 1 ? "" : "s"}` : "",
   ].filter(Boolean);
   return <>{parts.join(" · ")}</>;

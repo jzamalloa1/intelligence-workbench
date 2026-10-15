@@ -17,6 +17,8 @@ from agent_core.models import build_model
 from agent_core.prompts import RESEARCHER
 from middleware.provider_prompt import ProviderPromptMiddleware
 from middleware.provider_switch import ProviderSwitchMiddleware
+from middleware.tool_access import HideToolsMiddleware
+from tools.fetch import fetch_url
 from tools.research import research
 
 
@@ -37,16 +39,25 @@ def build_subagents() -> list[dict[str, Any]]:
                 "researchers can run in parallel."
             ),
             "system_prompt": RESEARCHER,
-            "tools": [research],
+            # Read-only web access. No shell: see HideToolsMiddleware below.
+            "tools": [research, fetch_url],
             # Non-streaming: see build_model() — inline subagent token
             # events otherwise splice into the parent transcript.
             "model": build_model("worker", stream=False),
-            # Subagents don't inherit the lead's middleware. These two make the
-            # researcher follow the conversation's provider (x-llm-provider)
-            # and get that provider's prompt steering, like the lead does.
+            # Subagents don't inherit the lead's middleware. The provider pair
+            # makes the researcher follow the conversation's provider
+            # (x-llm-provider) and get that provider's prompt steering, like the
+            # lead does.
+            #
+            # HideToolsMiddleware takes away the sandbox shell deepagents gives
+            # every subagent. Researchers read untrusted web pages; the agent
+            # that reads them shouldn't be the one that can run commands. It
+            # also means approvals only ever come from the lead. fetch_url
+            # covers what they used the shell for (curl a page).
             "middleware": [
                 ProviderPromptMiddleware(),
                 ProviderSwitchMiddleware("worker", stream=False),
+                HideToolsMiddleware({"execute"}),
             ],
         },
     ]
