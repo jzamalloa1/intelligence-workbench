@@ -85,6 +85,11 @@ try {
 
   await workspace.getByRole("tab", { name: /Files/ }).click();
   check(!(await workspace.getByText("/memories/agent/AGENTS.md").isVisible()), "memory writes are not listed as Workspace files");
+  check(await workspace.getByTestId("scope-note").getByText("Alex Rivera").isVisible(), "Files tab names whose private sandbox it is");
+  check(await page.getByTestId("scope-note").filter({ hasText: "private sandbox" }).count() === 2, "…and so does the Sandbox panel");
+  await workspace.getByRole("tab", { name: /Memory/ }).click();
+  check((await workspace.getByTestId("scope-note").count()) === 0, "the Memory tab shows its own shared notice instead");
+  await workspace.getByRole("tab", { name: /Files/ }).click();
 
   const signedOut = await (await fetch(`${BASE}/api/memory`)).status;
   check(signedOut === 401, `memory API needs a signed-in user (got ${signedOut})`);

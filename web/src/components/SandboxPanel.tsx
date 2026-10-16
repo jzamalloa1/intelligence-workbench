@@ -4,7 +4,8 @@ import type { Activity, Chart } from "@/lib/workbench";
 import { useWorkbenchUI } from "@/lib/workbench-ui";
 import { ArtifactCanvas } from "./ArtifactCanvas";
 import { ConsolePanel } from "./ConsolePanel";
-import { Panel, Pill } from "./Panel";
+import { useSession } from "@/lib/session-client";
+import { Panel, Pill, ScopeNote } from "./Panel";
 
 /**
  * One panel, two tabs — Console (sandbox `execute` output) and Charts
@@ -19,10 +20,12 @@ import { Panel, Pill } from "./Panel";
 export function SandboxPanel({ activity, charts }: { activity: Activity[]; charts: Chart[] }) {
   const { sandboxTab: tab, setSandboxTab: setTab } = useWorkbenchUI();
   const commandCount = activity.filter((a) => a.tool === "execute").length;
+  const { user } = useSession();
 
   return (
     <Panel
       title="Sandbox"
+      footer={<ScopeNote owner={user.name} />}
       badge={
         <div className="flex items-center gap-2">
           <TabButton active={tab === "console"} onClick={() => setTab("console")}>

@@ -11,11 +11,14 @@ import type { ReactNode } from "react";
 export function Panel({
   title,
   badge,
+  footer,
   children,
   className = "",
 }: {
   title: string;
   badge?: ReactNode;
+  /** A slim strip under the content — e.g. a `ScopeNote`. */
+  footer?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -32,7 +35,30 @@ export function Panel({
       </header>
       {/* Content scrolls inside the panel; the page itself never scrolls. */}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {footer}
     </section>
+  );
+}
+
+/**
+ * Whose sandbox a panel shows. Each conversation gets its own sandbox VM and
+ * belongs to one user, so its files are private to the signed-in user's
+ * conversation — there are no per-user folders because there is no shared disk.
+ * (Agent memory is the exception, and the Memory tab says so itself.)
+ */
+export function ScopeNote({ owner }: { owner: string }) {
+  return (
+    <footer
+      data-testid="scope-note"
+      className="flex shrink-0 items-center gap-1.5 border-t border-wb-border px-3.5 py-1.5 text-[10.5px] text-wb-faint"
+    >
+      <svg aria-hidden viewBox="0 0 16 16" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <path d="M4.5 7V5.5a3.5 3.5 0 0 1 7 0V7M3.5 7h9v6.5h-9z" strokeLinejoin="round" />
+      </svg>
+      <span>
+        <span className="text-wb-muted">{owner}</span> · this conversation&apos;s private sandbox
+      </span>
+    </footer>
   );
 }
 

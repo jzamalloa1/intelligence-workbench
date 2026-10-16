@@ -11,7 +11,8 @@ import { useChartLibrary, useWorkbenchUI } from "@/lib/workbench-ui";
 import { ChipButton, DownloadIcon, ExpandIcon } from "./charts/ChartControls";
 import { ChartLegend, ChartPlot } from "./charts/ChartPlot";
 import { MemoryView } from "./MemoryView";
-import { EmptyState, Panel, Pill } from "./Panel";
+import { useSession } from "@/lib/session-client";
+import { EmptyState, Panel, Pill, ScopeNote } from "./Panel";
 
 /**
  * Files the agent has written, derived from write_file / edit_file tool calls.
@@ -21,6 +22,7 @@ import { EmptyState, Panel, Pill } from "./Panel";
  */
 export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memoryEdits: MemoryEdit[] }) {
   const [tab, setTab] = useState<"files" | "memory">("files");
+  const { user } = useSession();
   // Which file is open lives in WorkbenchUIContext (by path, not by object) so
   // the agent's `focus_panel` frontend tool can open one, and so the viewer
   // follows later revisions of the same path rather than a stale snapshot.
@@ -32,6 +34,7 @@ export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memo
     <>
       <Panel
         title="Workspace"
+        footer={tab === "files" ? <ScopeNote owner={user.name} /> : undefined}
         badge={
           <div className="flex items-center gap-1.5" role="tablist" aria-label="Workspace view">
             <Tab active={tab === "files"} onClick={() => setTab("files")}>
