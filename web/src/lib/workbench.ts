@@ -161,6 +161,7 @@ export function summarizeTool(
     }
     case "render_chart":
     case "render_dashboard":
+    case "render_widget":
       return str(args.title) ?? "";
     default:
       return "";

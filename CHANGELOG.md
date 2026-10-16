@@ -12,6 +12,10 @@
   A2UI component list: headline metrics, charts placed by id, and a small table. It is drawn by
   CopilotKit's A2UI renderer with the workbench's own components, in light and dark, and comes
   back when the conversation is reopened. New check: `verify-dashboard.mjs`.
+- **Interactive widgets (Open Generative UI).** A new lead tool, `render_widget`, runs a small HTML
+  page the agent writes, such as a calculator or a what-if with sliders, in the chat. It runs in a
+  script-only sandboxed iframe, a Content-Security-Policy blocks all network access, and a widget
+  that navigates away is closed. Used only when asked. New check: `verify-widget.mjs`.
 - Line charts no longer clip their first and last axis labels.
 
 ## v0.1.0 — 2026-10-15

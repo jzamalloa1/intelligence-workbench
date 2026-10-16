@@ -860,6 +860,38 @@ The live test took three Opus calls. Given four numbers, the lead drew the chart
 dashboard on its first attempt, with correct derived figures. The reopened conversation showed the
 dashboard again.
 
+**Open Generative UI (2026-10-15).** `CopilotRuntime({ openGenerativeUI })` has the same activity
+transport as A2UI, so a widget would not survive reopening, and `OpenGenerativeUIToolRenderer` only
+shows placeholder text. So `render_widget` is a backend tool too. `WidgetCard` builds the activity
+renderer's content (`{ html: [..], htmlComplete, cssComplete }`) from the call's arguments and
+renders `OpenGenerativeUIActivityRenderer` directly.
+
+Its containment, read from source and then tested:
+
+- **The iframe.** `@jetbrains/websandbox` 1.4.1 creates an iframe with `sandbox="allow-scripts"`
+  only. CopilotKit adds no `sandboxAdditionalAttributes`, so the frame has an opaque origin and no
+  popups, forms or top navigation.
+- **Host functions.** The frame's `localApi` holds the functions registered with
+  `useSandboxFunctions`. We register none.
+- **The network.** The sandbox does *not* stop network requests. A Content-Security-Policy
+  `<meta>` does. websandbox runs everything as inline `<script>` tags (`runCode` appends a
+  script element, with no `eval`), so `script-src 'unsafe-inline'` is enough for it.
+- **Where the policy goes.** The model's document goes inside our `<body>`, so nothing it writes
+  is parsed before the policy. Its `<html>` and `<head>` tags are ignored, while its styles and
+  scripts still apply. websandbox injects its own bootstrap by replacing the first literal
+  `<head>`, which is ours.
+- **What stays open.** Self-navigation, which no CSP directive blocks in current browsers
+  (`navigate-to` never shipped). The tripwire closes the widget on its frame's second `load`, but
+  the request has already gone.
+
+`verify-widget.mjs` attacks a widget with `fetch`, an image beacon, a remote `<img>` and a CDN
+`<script>`, and checks that none reaches the network. As a control, the navigating widget's request
+is seen by the same capture.
+
+The live test took two Opus calls. Asked for a compound-interest calculator, the lead wrote a 2 KB
+widget that used the colour tokens and computed correctly. When reopened, it ran with zero outside
+requests.
+
 ---
 
 ## 7. MDA constraints that shape the design

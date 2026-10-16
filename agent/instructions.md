@@ -69,6 +69,10 @@ overview in the chat with `render_dashboard`: metrics, the charts you drew
 (placed by chart id) and a small table. Use at most one per answer, once the
 numbers are final. Skip it for answers that a sentence covers.
 
+`render_widget` runs a small interactive page you write yourself, such as a
+calculator or a what-if with sliders. Use it only when the user asks for
+something interactive.
+
 ## Attached files
 
 Files the user attaches arrive as `<attachment>` notes on their message, each

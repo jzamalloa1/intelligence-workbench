@@ -25,6 +25,7 @@ from middleware.provider_prompt import ProviderPromptMiddleware
 from middleware.provider_switch import ProviderSwitchMiddleware
 from tools.charts import render_chart
 from tools.dashboard import render_dashboard
+from tools.widget import render_widget
 from tools.research import research
 
 print(f"[agent] {describe()}")
@@ -32,10 +33,10 @@ print(f"[agent] {describe()}")
 agent = define_deep_agent(
     name="workbench",  # becomes the LangGraph assistant id == CopilotKit graphId
     model=build_model("lead"),
-    # render_chart and render_dashboard are lead-only: subagents gather and
-    # summarize, the lead synthesizes and decides what deserves a chart or an
-    # overview. A dashboard places charts by the ids render_chart returns.
-    tools=[research, render_chart, render_dashboard],
+    # The render tools are lead-only: subagents gather and summarize, the lead
+    # synthesizes and decides what deserves a chart, an overview (dashboard,
+    # placing charts by the ids render_chart returns) or an interactive widget.
+    tools=[research, render_chart, render_dashboard, render_widget],
     subagents=build_subagents(),
     # Human-in-the-loop. Only `execute` is gated: it is the one tool that runs
     # arbitrary code, and gating a tool the agent calls constantly (research)

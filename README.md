@@ -114,6 +114,7 @@ flowchart TD
     CANVAS -.chart_id.-> REP
     LEAD -->|"render_dashboard — A2UI layout"| DASH["Dashboard in the chat<br/>metrics, charts by id, a table"]
     CANVAS -.chart_id.-> DASH
+    LEAD -->|"render_widget — only when asked"| WID["Interactive widget in the chat<br/>sandboxed iframe, no network"]
     LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
 
     ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph\n(patched: workbench-agent.ts)"]
@@ -202,6 +203,28 @@ The browser draws it with CopilotKit's A2UI renderer (`@copilotkit/a2ui-renderer
 Why a tool of our own, not CopilotRuntime's `a2ui` option: that middleware injects a frontend tool
 and paints from an activity stream, which the history store doesn't keep. A tool call is kept, so
 a dashboard comes back when the conversation is reopened, the same way a chart does.
+
+### Interactive widgets
+
+`render_widget` (`tools/widget.py`) is Open Generative UI. When the user asks for something
+interactive, the lead writes a self-contained HTML page with inline CSS and JS. The browser runs
+it with CopilotKit's Open Generative UI renderer inside a `@jetbrains/websandbox` iframe
+(`web/src/components/WidgetCard.tsx`). The code is the model's, so it is contained:
+
+- **Iframe:** `sandbox="allow-scripts"` only, which means an opaque origin. The widget can't read
+  the app, its cookies or its storage, and can't open popups, submit forms or navigate the page.
+  No host functions are exposed to it.
+- **Content-Security-Policy:** the page is wrapped in a document whose `<head>` is ours and comes
+  first. Its CSP blocks fetch, XHR and WebSockets, and any external script, stylesheet, font or
+  image.
+- **Navigation tripwire:** a CSP can't stop a frame from navigating itself, so a widget whose
+  frame loads a second document is closed. The request that navigation made has already gone.
+  That one channel stays open, limited to what fits in a URL, and only if the model is talked into
+  writing it (for example by a prompt injection in researched material).
+
+The widget gets the workbench's colour tokens as CSS variables, so it matches light and dark. It
+is drawn from the tool call, so it comes back when the conversation is reopened. A widget costs a
+page of output tokens, so the lead uses one only when asked.
 
 ### Why subagents don't stream token-by-token
 
@@ -545,6 +568,8 @@ thread.
 | `middleware/tool_access.py` | `HideToolsMiddleware` — takes `execute` away from the researcher (see § Researchers have no shell) |
 | `middleware/attachments.py` | `AttachmentsMiddleware` — attached files into the sandbox, `<attachment>` notes in their place (see § Attached files) |
 | `web/src/lib/attachments.ts` | The browser half: accepted types and sizes, image downscaling, notes shown as file chips, files kept on Regenerate / Edit |
+| `tools/widget.py` | `render_widget` — Open Generative UI: a self-contained HTML page the lead writes, run sandboxed in the chat (see § Interactive widgets) |
+| `web/src/components/WidgetCard.tsx` | Runs a widget: CopilotKit's Open Generative UI renderer, inside our CSP wrapper, closed if its frame navigates |
 | `tools/dashboard.py` | `render_dashboard` — an A2UI v0.9 component list the browser draws with our catalog (see § Dashboards). Validated here first; `CATALOG` must match `web/src/components/dashboard/catalog.tsx` |
 | `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
@@ -629,7 +654,7 @@ sequenceDiagram
 
 | Name a skill can use | Where the lead gets it |
 |---|---|
-| `research`, `render_chart`, `render_dashboard` | Our tools, `agent.py` |
+| `research`, `render_chart`, `render_dashboard`, `render_widget` | Our tools, `agent.py` |
 | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card. Researchers get the same set minus `execute` |
 | `task` | deepagents' subagent middleware — delegation to `researcher` |
 | `write_todos` | `TodoListMiddleware`, added in `agent.py` |
@@ -654,6 +679,7 @@ sequenceDiagram
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
 | Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — gallery of every chart, full-screen view with table + PNG/SVG/CSV export, and live charts embedded in reports (downloadable as `.md` or PDF) |
 | A2UI dashboards (`render_dashboard`) | An overview card in the chat — headline metrics, charts placed by id, a small table — laid out by the agent in A2UI and drawn by CopilotKit's A2UI renderer with the workbench's own components |
+| Open Generative UI (`render_widget`) | Interactive widgets in the chat — a calculator, sliders, a what-if — written by the agent as HTML and run in a sandboxed iframe with no network access |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
 | Summarization + context offload | Context Meter (header) — the lead's current context against its model's window, per-call growth chart, compactions counted |
 | Per-call token usage | Cost Meter (header) — estimated spend for the conversation, split by model and lead vs subagents, cache reads/writes priced at their own rates |
@@ -697,6 +723,13 @@ blocks every run request).
 
 **Dashboards.** The agent lays out an overview in A2UI, and it renders in the chat. This one is a
 sample layout (from `web/scripts/verify-dashboard.mjs`).
+
+<p>
+  <img src="docs/screenshots/widget.png" alt="An interactive compound-interest calculator in the chat, marked Interactive and sandboxed: sliders for principal, annual rate and years, the final amount and the interest earned" width="460">
+</p>
+
+**Widgets.** The agent wrote this calculator when asked for one. It runs sandboxed in the chat, with
+no network access.
 
 ![The same workbench in dark mode, on a conversation about Bitcoin's outlook](docs/screenshots/workbench-dark.png)
 

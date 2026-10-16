@@ -190,7 +190,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs`, `verify-attachments.mjs`, `verify-dashboard.mjs` — run them after UI changes —
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs`, `verify-attachments.mjs`, `verify-dashboard.mjs`, `verify-widget.mjs` — run them after UI changes —
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump. README
   screenshots come from `node scripts/screenshots.mjs` (stored conversations, runs blocked).
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
@@ -242,6 +242,11 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   `CATALOG` (`agent/tools/dashboard.py`) and `web/src/components/dashboard/catalog.tsx` must list
   the same components and props. Type the catalog's renderers with plain types; letting
   `createCatalog` infer across zod 4's `zod/v3` and the renderer's zod 3 stalls `tsc`.
+- **Widgets are model-written code — keep all three walls.** `WidgetCard` relies on websandbox's
+  `sandbox="allow-scripts"` (never add `allow-same-origin`), on a CSP `<meta>` in a `<head>` that
+  precedes the widget's document, and on the navigation tripwire. Never register
+  `useSandboxFunctions` handlers without thinking about what a hostile page could call.
+  `verify-widget.mjs` must keep showing that nothing escapes.
 - **Attachments never stay in state as base64.** `AttachmentsMiddleware` saves each file to
   `/workspace/attachments/` and replaces it with an `<attachment>` text note before the first
   model call. A base64 CSV fails on Anthropic, and the summarizer counts non-image blocks by
