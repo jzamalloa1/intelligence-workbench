@@ -102,6 +102,57 @@
   --color-wb-series-6: var(--wb-series-6);
 }
 
+/*
+  CopilotKit's chat styles itself from shadcn-style variables on
+  [data-copilotkit], with its own light and `.dark` values. Point them at our
+  tokens instead, so the chat follows the workbench's palette in both themes
+  (the tokens above already switch). `html:root` (0,2,1) outranks its
+  `.dark [data-copilotkit]` (0,2,0) whatever order the sheets load in. Its
+  remaining `dark:` utilities key off a `.dark` class, which layout.tsx keeps
+  on <html> in step with the theme.
+*/
+html:root [data-copilotkit] {
+  --background: var(--wb-panel);
+  --foreground: var(--wb-text);
+  --card: var(--wb-panel);
+  --card-foreground: var(--wb-text);
+  --popover: var(--wb-panel);
+  --popover-foreground: var(--wb-text);
+  --primary: var(--wb-text);
+  --primary-foreground: var(--wb-panel);
+  --secondary: var(--wb-panel-alt);
+  --secondary-foreground: var(--wb-text);
+  --muted: var(--wb-panel-alt);
+  --muted-foreground: var(--wb-muted);
+  --accent: var(--wb-panel-alt);
+  --accent-foreground: var(--wb-text);
+  --border: var(--wb-border);
+  --input: var(--wb-border);
+  --ring: var(--wb-accent);
+}
+
+/*
+  CopilotKit sets chat prose at 16px with roomy leading, which dwarfs every
+  other panel (12-13px) and wraps hard in a narrow column. 14px keeps it the
+  most readable text on screen without shouting.
+*/
+html:root [data-copilotkit] .cpk\:prose {
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+/* Its dark input is a fixed neutral grey; tint it to the panel palette. */
+html:root.dark .copilotKitInput {
+  background-color: var(--wb-panel-alt);
+}
+
+/* The typography plugin wraps inline code in literal backticks; the code
+   styling already marks it, so they read as stray characters. */
+html:root [data-copilotkit] .cpk\:prose code::before,
+html:root [data-copilotkit] .cpk\:prose code::after {
+  content: none;
+}
+
 html,
 body {
   height: 100%;

@@ -190,7 +190,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs` — run them after UI changes —
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs` — run them after UI changes —
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
@@ -209,6 +209,13 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **Subagent messages never go back to the lead.** `SubagentTracker` re-inserts subagent tool
   calls into every message snapshot so the UI keeps them; `withoutSubagentMessages` must strip
   them from each run's input, or the adapter writes them into the lead's thread.
+- **CopilotKit's chat is themed through our tokens**: `globals.css` maps its shadcn-style
+  variables (`--background`, `--foreground`, …) to `--wb-*` under `html:root [data-copilotkit]`
+  (that specificity beats its own `.dark [data-copilotkit]`), and `layout.tsx` keeps a `.dark`
+  class on `<html>` for its `dark:` utilities. Don't restyle the chat with its own colours.
+- **Browser scripts must not start runs by accident**: the starter cards send their prompt on
+  click. Every script that drives the live page routes `**/api/copilotkit/agent/*/run` to a
+  stub or abort, and clicks history items inside `navigation "Conversation history"`.
 - **Mermaid diagrams in docs must render**: `node scripts/render-mermaid.mjs ../README.md` parses
   and draws every block with Mermaid 11 (GitHub's major). Use `<br/>` for line breaks in new
   labels; no backticks or `;` inside labels/messages — both broke diagrams once.

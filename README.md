@@ -593,6 +593,7 @@ sequenceDiagram
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
 | Reasoning | Reasoning card above each answer the lead thought about — its thinking summary, streamed live, folded when done |
 | Chat UX | Welcome screen with starter prompts, follow-up suggestion chips, Regenerate and Edit (the thread forks from the question's checkpoint) |
+| Layout & theme | Four columns on a wide screen; on a laptop the history sidebar tucks away, and below that a view switch shows one panel group at a time (history included on a phone). Light and dark follow the system, CopilotKit's chat included |
 | Subagents | Research lanes in the chat — one live card per delegation (status, latest step, searches, notes, answer), a progress-framed group for parallel delegations, a banner naming who is working; Activity Timeline for the full call list |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |
 | Skills (progressive disclosure) | Skills strip (Plan panel) — every available skill, and which ones this conversation loaded |

@@ -13,9 +13,18 @@ import type { Chart } from "./workbench";
  */
 export type SandboxTab = "console" | "charts";
 
+/**
+ * Which panel group is on screen when there isn't room for all of them: below
+ * `lg` one at a time (history included), from `lg` to `xl` the conversation
+ * plus one side column.
+ */
+export type PanelView = "chat" | "history" | "plan" | "workspace";
+
 export interface WorkbenchUIValue {
   sandboxTab: SandboxTab;
   setSandboxTab: (tab: SandboxTab) => void;
+  view: PanelView;
+  setView: (view: PanelView) => void;
   /** Path of the file open in the Workspace viewer, or null when closed. */
   openFilePath: string | null;
   setOpenFilePath: (path: string | null) => void;

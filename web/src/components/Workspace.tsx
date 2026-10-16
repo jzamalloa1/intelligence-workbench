@@ -70,8 +70,8 @@ export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memo
                       {file.path}
                     </span>
                     <span className="block text-[10.5px] text-wb-faint">
-                      {file.lastTool}
-                      {file.bySubagent ? " · by a researcher" : ""}
+                      {file.revisions > 1 ? "Edited" : "Written"} by{" "}
+                      {file.bySubagent ? "a researcher" : "the lead agent"}
                       {file.revisions > 1 ? ` · ${file.revisions} revisions` : ""}
                       {!file.content ? " · content not captured" : ""}
                     </span>

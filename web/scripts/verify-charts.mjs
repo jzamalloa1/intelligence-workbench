@@ -143,7 +143,7 @@ check(!svg.includes("var(--"), "exported SVG has literal colors, no CSS variable
 check(fs.readFileSync(`${OUT}/export.csv`, "utf8").startsWith("Judge,Cost per call (cents),Latency per call (s)"), "CSV header carries units");
 
 await page.keyboard.press("Escape");
-await page.getByRole("button", { name: "/reports/jev.md write_file" }).click();
+await page.getByRole("button", { name: "/reports/jev.md Written by the lead agent" }).click();
 const viewer = page.getByRole("dialog", { name: "/reports/jev.md" });
 await viewer.waitFor();
 await page.waitForTimeout(600);

@@ -31,6 +31,7 @@ import {
   ChartLibraryContext,
   WorkbenchUIContext,
   useWorkbenchUI,
+  type PanelView,
   type SandboxTab,
 } from "@/lib/workbench-ui";
 import { ChartDialog } from "@/components/charts/ChartDialog";
@@ -50,11 +51,17 @@ export default function Page() {
   // Keyed by conversation: switching threads starts every panel's UI state
   // (open file, expanded chart, tab) fresh rather than carrying it across.
   const { threadId } = useSession();
-  return <ConversationView key={threadId} />;
+  // The sidebar choice outlives the conversation: picking one from history
+  // must not snap a pinned sidebar shut. null = automatic (shows from 2xl).
+  const [sidebarPref, setSidebarPref] = useState<boolean | null>(null);
+  return <ConversationView key={threadId} sidebarPref={sidebarPref} setSidebarPref={setSidebarPref} />;
 }
 
-function ConversationView() {
+type SidebarPrefProps = { sidebarPref: boolean | null; setSidebarPref: (open: boolean) => void };
+
+function ConversationView(sidebar: SidebarPrefProps) {
   const [sandboxTab, setSandboxTab] = useState<SandboxTab>("console");
+  const [view, setView] = useState<PanelView>("chat");
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
 
@@ -62,22 +69,24 @@ function ConversationView() {
     () => ({
       sandboxTab,
       setSandboxTab,
+      view,
+      setView,
       openFilePath,
       setOpenFilePath,
       expandedChartId,
       setExpandedChartId,
     }),
-    [sandboxTab, openFilePath, expandedChartId],
+    [sandboxTab, view, openFilePath, expandedChartId],
   );
 
   return (
     <WorkbenchUIContext.Provider value={ui}>
-      <Workbench />
+      <Workbench {...sidebar} />
     </WorkbenchUIContext.Provider>
   );
 }
 
-function Workbench() {
+function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
   // Without `updates` the hook does not subscribe and nothing here ever moves.
   // State drives the plan; messages drive files and activity.
   const { agent } = useAgent({
@@ -112,8 +121,11 @@ function Workbench() {
     [messages],
   );
 
-  const { sandboxTab } = useWorkbenchUI();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { sandboxTab, view } = useWorkbenchUI();
+  // Automatic (null) shows the history sidebar from 2xl, where the other
+  // panels leave room for it; the toggle pins it open or closed.
+  const wide = useMediaQuery("(min-width: 1536px)");
+  const sidebarOpen = sidebarPref ?? wide;
   useApprovals();
   useFocusPanelTool(charts);
   useHistoryRefresh(running);
@@ -139,23 +151,25 @@ function Workbench() {
           running={running}
           usage={usage}
           sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          onToggleSidebar={() => setSidebarPref(!sidebarOpen)}
         />
+        <ViewSwitch />
 
-        <main
-          className={`grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 ${
-            sidebarOpen
-              ? "lg:grid-cols-[232px_minmax(0,1fr)_380px] xl:grid-cols-[232px_minmax(0,1fr)_400px_320px]"
-              : "lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px_320px]"
-          }`}
-        >
-          {sidebarOpen ? (
-            <div className="hidden min-h-0 lg:grid">
+        <main className={`grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 max-xl:pt-0 ${GRID[sidebarPref === null ? "auto" : sidebarPref ? "open" : "closed"]}`}>
+          {sidebarPref !== false ? (
+            <div className={`hidden min-h-0 ${sidebarPref ? "lg:grid" : "2xl:grid"}`}>
               <HistorySidebar />
             </div>
           ) : null}
 
-          <Panel title="Conversation" className="min-h-0">
+          {/* Below lg the sidebar is one of the switchable views. */}
+          {view === "history" ? (
+            <div className="grid min-h-0 lg:hidden">
+              <HistorySidebar />
+            </div>
+          ) : null}
+
+          <Panel title="Conversation" className={`min-h-0 ${view === "chat" ? "" : "max-lg:hidden"}`}>
             <div className="flex h-full flex-col">
               <ResearchBanner />
               {actions.editing ? (
@@ -170,10 +184,14 @@ function Workbench() {
                 />
               ) : null}
               <div className="relative min-h-0 flex-1">
-                <CopilotChat agentId="workbench" messageView={messageView} />
+                <CopilotChat agentId="workbench" messageView={messageView} input={CHAT_INPUT} />
                 {showWelcome ? (
-                  <div className="absolute inset-x-0 top-0 bottom-28 flex items-center justify-center overflow-y-auto bg-wb-panel px-6">
-                    <WelcomeHero onPick={actions.send} />
+                  // Centred with margins, not align-items, so a hero taller than
+                  // the space scrolls from its top instead of clipping it.
+                  <div className="absolute inset-x-0 top-0 bottom-28 flex overflow-y-auto bg-wb-panel px-6 py-6">
+                    <div className="m-auto">
+                      <WelcomeHero onPick={actions.send} />
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -181,7 +199,11 @@ function Workbench() {
           </Panel>
 
           {/* Plan + activity: the agent's reasoning made visible. */}
-          <div className="hidden min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 lg:grid">
+          <div
+            className={`min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 xl:grid ${
+              view === "plan" ? "grid" : "hidden"
+            } ${view === "workspace" ? "lg:hidden" : "lg:grid"}`}
+          >
             <PlanBoard todos={todos} skills={skills} />
             <ActivityTimeline activity={activity} />
           </div>
@@ -189,7 +211,9 @@ function Workbench() {
           {/* Workspace + Sandbox get their own column once there's room for it.
               The split follows what's on show: charts get the larger share. */}
           <div
-            className={`hidden min-h-0 gap-3 transition-[grid-template-rows] duration-300 ease-out xl:grid ${
+            className={`min-h-0 gap-3 transition-[grid-template-rows] duration-300 ease-out xl:grid ${
+              view === "workspace" ? "grid" : "hidden"
+            } ${
               sandboxTab === "charts" && charts.length > 0
                 ? "grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)]"
                 : "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
@@ -207,6 +231,67 @@ function Workbench() {
 }
 
 /**
+ * Grid columns per breakpoint. Below `lg`: one panel group at a time. `lg`:
+ * conversation plus one side column. `xl`: both side columns. `2xl`: room for
+ * the history sidebar too — which is where "auto" starts showing it.
+ */
+const GRID = {
+  auto: "lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_360px_300px] 2xl:grid-cols-[232px_minmax(0,1fr)_400px_320px]",
+  open: "lg:grid-cols-[232px_minmax(0,1fr)_340px] xl:grid-cols-[232px_minmax(0,1fr)_360px_300px] 2xl:grid-cols-[232px_minmax(0,1fr)_400px_320px]",
+  closed: "lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_360px_300px] 2xl:grid-cols-[minmax(0,1fr)_400px_320px]",
+} as const;
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    setMatches(media.matches);
+    const onChange = () => setMatches(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+const VIEWS: { id: PanelView; label: string; className?: string }[] = [
+  { id: "chat", label: "Chat", className: "lg:hidden" },
+  { id: "history", label: "History", className: "lg:hidden" },
+  { id: "plan", label: "Plan" },
+  { id: "workspace", label: "Workspace" },
+];
+
+/** Picks the panel group on screen when there isn't room for all of them. */
+function ViewSwitch() {
+  const { view, setView } = useWorkbenchUI();
+  // From lg the conversation is always visible, so "chat" (and "history",
+  // which has its own sidebar there) means the plan column.
+  const current = (v: PanelView) => v === view || (v === "plan" && (view === "chat" || view === "history"));
+  return (
+    <nav aria-label="Panels" className="flex shrink-0 justify-center px-3 pt-3 pb-2.5 xl:hidden">
+      <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-wb-border bg-wb-panel p-0.5 text-[11.5px]">
+        {VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            aria-pressed={v.id === view}
+            onClick={() => setView(v.id)}
+            className={`shrink-0 rounded-full px-3 py-1 transition-colors ${v.className ?? ""} ${
+              v.id === view
+                ? "bg-wb-accent-soft text-wb-accent"
+                : current(v.id)
+                  ? "text-wb-muted lg:bg-wb-accent-soft lg:text-wb-accent"
+                  : "text-wb-muted hover:text-wb-text"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+/**
  * A message that delegates to several subagents at once is framed as one
  * "parallel research" group; everything else renders on its own. Module-level
  * and stable, as CopilotChat memoizes on these functions.
@@ -220,6 +305,12 @@ function groupDelegations(messages: Parameters<typeof withoutSubagentRows>[0]): 
 }
 
 const MESSAGE_VIEW = { transformMessages: withoutSubagentRows, groupMessages: groupDelegations };
+
+/**
+ * The input's "+" opens a menu of attachments and tools. We configure neither
+ * (the agent doesn't take files yet), so it would open an empty menu.
+ */
+const CHAT_INPUT = { addMenuButton: () => null };
 
 /**
  * `value`, but only once it has held for `ms`. A reopened conversation is empty
@@ -296,7 +387,7 @@ function useApprovals() {
  * where to look ("the chart is in the canvas" → it just opens the canvas).
  */
 function useFocusPanelTool(charts: Chart[]) {
-  const { setSandboxTab, setOpenFilePath, setExpandedChartId } = useWorkbenchUI();
+  const { setSandboxTab, setOpenFilePath, setExpandedChartId, setView } = useWorkbenchUI();
 
   useFrontendTool({
     name: "focus_panel",
@@ -323,6 +414,8 @@ function useFocusPanelTool(charts: Chart[]) {
     handler: async ({ panel, file_path, chart_id }) => {
       if (panel) setSandboxTab(panel);
       if (file_path) setOpenFilePath(file_path);
+      // On a narrow screen the panel may be hidden behind the view switch.
+      if (panel || file_path) setView("workspace");
       let chartNote: string | undefined;
       if (chart_id) {
         const slug = chartSlug(chart_id);
@@ -355,7 +448,7 @@ function Header({
   onToggleSidebar: () => void;
 }) {
   return (
-    <header className="flex shrink-0 items-center justify-between gap-4 border-b border-wb-border bg-wb-panel px-4 py-2.5">
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-wb-border bg-wb-panel px-4 py-2.5">
       <div className="flex items-center gap-2.5">
         <button
           type="button"
@@ -371,10 +464,10 @@ function Header({
           </svg>
         </button>
         <div className="flex items-baseline gap-2.5">
-          <h1 className="text-[13px] font-semibold tracking-tight">
+          <h1 className="whitespace-nowrap text-[13px] font-semibold tracking-tight">
             Intelligence Workbench
           </h1>
-          <span className="hidden text-[11.5px] text-wb-faint sm:inline">
+          <span className="hidden whitespace-nowrap text-[11.5px] text-wb-faint xl:inline">
             Managed Deep Agents &middot; CopilotKit
           </span>
         </div>
@@ -383,11 +476,15 @@ function Header({
       <div
         className={`flex items-center gap-3 ${INSPECTOR_ENABLED ? "mr-14" : ""}`}
       >
-        <UsageMeters summary={usage} />
+        <div className="hidden md:block">
+          <UsageMeters summary={usage} />
+        </div>
         <ProviderToggle />
-        <RunnerToggle />
+        <div className="hidden sm:block">
+          <RunnerToggle />
+        </div>
 
-        <span className="flex items-center gap-1.5 text-[11.5px] text-wb-muted" aria-live="polite">
+        <span className="hidden items-center gap-1.5 text-[11.5px] text-wb-muted sm:flex" aria-live="polite">
           <span
             aria-hidden
             className={`size-1.5 rounded-full ${
@@ -501,7 +598,7 @@ function UserMenu() {
         className="flex items-center gap-2 rounded-full py-0.5 pl-0.5 pr-2 transition-colors hover:bg-wb-panel-alt"
       >
         <Avatar name={user.name} size="sm" />
-        <span className="hidden text-[11.5px] text-wb-muted sm:inline">{user.name}</span>
+        <span className="hidden whitespace-nowrap text-[11.5px] text-wb-muted xl:inline">{user.name}</span>
       </button>
       {open ? (
         <div

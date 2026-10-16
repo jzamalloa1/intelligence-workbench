@@ -99,7 +99,7 @@ try {
   check(true, "reopened conversation shows its messages");
   check(new URL(page.url()).searchParams.get("t") === T1, "URL carries the open conversation (?t=)");
   check(await page.getByText("Research adoption").isVisible(), "plan restored from saved state");
-  check(await page.getByRole("button", { name: "/reports/jev.md write_file" }).isVisible(), "workspace file restored");
+  check(await page.getByRole("button", { name: "/reports/jev.md Written by the lead agent" }).isVisible(), "workspace file restored");
   await page.getByRole("tab", { name: "Charts" }).click();
   check(await page.getByText("Judge cost per eval").first().isVisible(), "chart restored");
   await page.screenshot({ path: `${OUT}/history-reopened.png` });

@@ -89,7 +89,7 @@ await page.waitForTimeout(1200);
 
 const workspace = page.locator("section", { has: page.getByRole("heading", { name: "Workspace" }) });
 check(await workspace.getByText("/research/etf-inflows.md").isVisible(), "the researcher's /research/ file survives the final snapshot");
-check(await workspace.getByText("by a researcher").isVisible(), "…and is labelled as the researcher's");
+check(await workspace.getByText("Written by a researcher").isVisible(), "…and is labelled as the researcher's");
 
 const activity = page.locator("section", { has: page.getByRole("heading", { name: "Activity" }) });
 check(await activity.getByText("bitcoin ETF inflows September").isVisible(), "researcher searches stay in Activity");
