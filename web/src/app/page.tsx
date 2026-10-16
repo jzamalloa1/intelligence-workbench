@@ -22,6 +22,7 @@ import { ToolCard } from "@/components/ToolCard";
 import { DelegationGroup, ResearchBanner, TaskLaneCard } from "@/components/ResearchLanes";
 import { AttachButton, AttachmentNotice, EditBar, useMessageActions, useWorkbenchSuggestions, WelcomeHero } from "@/components/ChatExtras";
 import { ReasoningCard } from "@/components/ReasoningCard";
+import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { attachmentsConfig, withAttachmentChips } from "@/lib/attachments";
 import { deriveLanes, LanesContext, taskCallIds, withoutSubagentRows } from "@/lib/lanes";
 import { Workspace } from "@/components/Workspace";
@@ -111,6 +112,11 @@ function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
     name: "task",
     parameters: z.object({ description: z.string().optional(), subagent_type: z.string().optional() }),
     render: (p) => <TaskLaneCard toolCallId={p.toolCallId} args={p.parameters} status={p.status} />,
+  });
+  useRenderTool({
+    name: "render_dashboard",
+    parameters: z.object({ title: z.string().optional(), components: z.array(z.any()).optional(), dashboard_id: z.string().optional() }),
+    render: (p) => <DashboardCard toolCallId={p.toolCallId} parameters={p.parameters} status={p.status} result={p.result} />,
   });
   const lanes = useMemo(() => deriveLanes(messages), [messages]);
   const running = agent?.isRunning ?? false;

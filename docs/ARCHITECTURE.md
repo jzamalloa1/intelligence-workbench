@@ -826,6 +826,40 @@ plain text so every model and the summarizer accept them. Two limits follow:
 The live test cost one Opus call. It sent a CSV, a PNG and a text PDF through the real route,
 and the model answered correctly from the notes, with all three files in the sandbox.
 
+**A2UI dashboards (2026-10-15).** CopilotKit 1.78 offers two A2UI paths, and neither fits as
+documented:
+
+- **`CopilotRuntime({ a2ui })`** applies `A2UIMiddleware`. It can inject a `render_a2ui` tool
+  into the run's frontend tools, which our Python `CopilotKitMiddleware` would bind for the lead.
+  It paints from the tool's streamed arguments as an `a2ui-surface` *activity message*. Activity
+  messages are not in the adapter's `MESSAGES_SNAPSHOT`, which is what `HistoryRunner` stores,
+  so a reopened conversation would lose its dashboards.
+- **`generate_a2ui`** (`getA2UITools` in `@ag-ui/langgraph`) is a LangChain *JS* tool that
+  runs its own model call to design the UI. It is meant for JS graphs, and would put a second model
+  key in the web server.
+
+So `render_dashboard` is a backend tool whose arguments are the A2UI component list. The browser
+turns the call into `createSurface` + `updateComponents` operations and hands them to
+`A2UIProvider` / `A2UIRenderer` from `@copilotkit/a2ui-renderer` with our catalog
+(`createCatalog`). This is the renderer's own pattern, from `createA2UIMessageRenderer`. The
+format and renderer are standard A2UI; only the transport is ours. Streaming paint and A2UI
+actions are given up. Neither matters for a read-only overview drawn once the numbers are final.
+
+Two snags:
+
+- **Two copies of zod 3.** The renderer depends on zod 3.25 (it converts the catalog schemas with
+  `zod-to-json-schema`). The app is on zod 4, whose `zod/v3` export works at runtime. But letting
+  TypeScript infer `createCatalog`'s generics across the two copies made `tsc --noEmit` run for
+  minutes without finishing. The renderers are typed with plain prop types and the catalog is
+  passed through `unknown`, and the check is back to seconds.
+- **Line charts clipped their end labels.** The first and last points sit on the plot's edges.
+  That was visible in the narrower dashboard and also true in the gallery, so `ChartPlot` now
+  pads the x-axis for line charts.
+
+The live test took three Opus calls. Given four numbers, the lead drew the chart and then a valid
+dashboard on its first attempt, with correct derived figures. The reopened conversation showed the
+dashboard again.
+
 ---
 
 ## 7. MDA constraints that shape the design

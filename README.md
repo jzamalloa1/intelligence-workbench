@@ -112,6 +112,8 @@ flowchart TD
     LEAD -->|"render_chart → chart_id"| CANVAS["Artifact Canvas\n(gallery + full screen)"]
     LEAD -->|"write_file"| REP["/reports/*.md — deliverable\n(chart blocks embed charts by id)"]
     CANVAS -.chart_id.-> REP
+    LEAD -->|"render_dashboard — A2UI layout"| DASH["Dashboard in the chat<br/>metrics, charts by id, a table"]
+    CANVAS -.chart_id.-> DASH
     LEAD --> ANS["Short chat answer\nwith markdown-linked citations"]
 
     ANS --> AGUI["AG-UI events stream back\nthrough @ag-ui/langgraph\n(patched: workbench-agent.ts)"]
@@ -184,6 +186,22 @@ as about 330K tokens and compacts the conversation on the first call.
 The notes are plain text, so the message works for either provider and for the summarization
 model. The web app shows them as file chips (`web/src/lib/attachments.ts`) and lists the files
 in the Workspace panel as "Attached by you". Regenerate and Edit keep a message's files.
+
+### Dashboards
+
+`render_dashboard` (`tools/dashboard.py`) lets the lead lay out an overview: a flat
+[A2UI](https://a2ui.org) v0.9 component list, where containers name their children by id. Layout
+uses A2UI's basic names (`Column`, `Row`, `Card`, `Text`, `Divider`), and three components are
+ours: `Metric` (a headline number), `Chart` (a `render_chart` chart, by id) and `Table`. The tool
+checks the layout and returns a readable error the model can fix: unknown components, missing
+props, dangling or cyclic children, oversized tables.
+
+The browser draws it with CopilotKit's A2UI renderer (`@copilotkit/a2ui-renderer`) and our catalog
+(`web/src/components/dashboard/catalog.tsx`), styled with the workbench's tokens, in light and dark.
+
+Why a tool of our own, not CopilotRuntime's `a2ui` option: that middleware injects a frontend tool
+and paints from an activity stream, which the history store doesn't keep. A tool call is kept, so
+a dashboard comes back when the conversation is reopened, the same way a chart does.
 
 ### Why subagents don't stream token-by-token
 
@@ -527,6 +545,7 @@ thread.
 | `middleware/tool_access.py` | `HideToolsMiddleware` — takes `execute` away from the researcher (see § Researchers have no shell) |
 | `middleware/attachments.py` | `AttachmentsMiddleware` — attached files into the sandbox, `<attachment>` notes in their place (see § Attached files) |
 | `web/src/lib/attachments.ts` | The browser half: accepted types and sizes, image downscaling, notes shown as file chips, files kept on Regenerate / Edit |
+| `tools/dashboard.py` | `render_dashboard` — an A2UI v0.9 component list the browser draws with our catalog (see § Dashboards). Validated here first; `CATALOG` must match `web/src/components/dashboard/catalog.tsx` |
 | `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
 | `skills/<name>/SKILL.md` | Procedures the lead loads when a task matches — see § Skills. Frontmatter `name` must equal the directory name |
@@ -610,7 +629,7 @@ sequenceDiagram
 
 | Name a skill can use | Where the lead gets it |
 |---|---|
-| `research`, `render_chart` | Our tools, `agent.py` |
+| `research`, `render_chart`, `render_dashboard` | Our tools, `agent.py` |
 | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card. Researchers get the same set minus `execute` |
 | `task` | deepagents' subagent middleware — delegation to `researcher` |
 | `write_todos` | `TodoListMiddleware`, added in `agent.py` |
@@ -634,6 +653,7 @@ sequenceDiagram
 | Skills (progressive disclosure) | Skills strip (Plan panel) — every available skill, and which ones this conversation loaded |
 | Sandbox code execution | Console tab (Sandbox panel) — command + stdout/stderr per `execute` call |
 | Structured chart output (`render_chart`) | Artifact Canvas tab (Sandbox panel) — gallery of every chart, full-screen view with table + PNG/SVG/CSV export, and live charts embedded in reports (downloadable as `.md` or PDF) |
+| A2UI dashboards (`render_dashboard`) | An overview card in the chat — headline metrics, charts placed by id, a small table — laid out by the agent in A2UI and drawn by CopilotKit's A2UI renderer with the workbench's own components |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
 | Summarization + context offload | Context Meter (header) — the lead's current context against its model's window, per-call growth chart, compactions counted |
 | Per-call token usage | Cost Meter (header) — estimated spend for the conversation, split by model and lead vs subagents, cache reads/writes priced at their own rates |
@@ -660,8 +680,9 @@ toggle let you run the same question both ways and compare cost, latency, and ou
 
 ## Screenshots
 
-All taken from real research runs stored in the local history, regenerated with
-`node web/scripts/screenshots.mjs` (zero API cost; it blocks every run request).
+Taken from real research runs stored in the local history, except where a caption says the
+image is an example. Regenerate them with `node web/scripts/screenshots.mjs` (zero API cost; it
+blocks every run request).
 
 | | |
 |---|---|
@@ -669,6 +690,13 @@ All taken from real research runs stored in the local history, regenerated with
 | **Parallel research.** Each `task` delegation is a lane with its own steps, searches and notes. | **Reports.** Markdown with embedded charts, from the Workspace; download as `.md` or PDF. |
 | ![A chart opened full screen, with a list of the conversation's charts and Table, PNG, SVG and CSV controls](docs/screenshots/charts.png) | ![An approval card: a plain-language description of the command, the files it uses and saves, a warning that it connects to the internet, the exact command, and Run it, Change it and Don't run buttons](docs/screenshots/approval.png) |
 | **Charts.** Every `render_chart` call lands in the Sandbox gallery; full screen adds a table view and exports. | **Approvals.** Nothing runs in the sandbox without your OK (the request shown is an example). |
+
+<p>
+  <img src="docs/screenshots/dashboard.png" alt="A dashboard in the chat: three metric tiles with values and changes, a line chart of market size by year, and a vendor share table" width="460">
+</p>
+
+**Dashboards.** The agent lays out an overview in A2UI, and it renders in the chat. This one is a
+sample layout (from `web/scripts/verify-dashboard.mjs`).
 
 ![The same workbench in dark mode, on a conversation about Bitcoin's outlook](docs/screenshots/workbench-dark.png)
 

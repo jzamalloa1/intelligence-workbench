@@ -8,6 +8,11 @@
   reads a note with its contents: the whole file, a preview, or a PDF's extracted text. The chat
   shows the files as chips, the Workspace lists them as "Attached by you", and Regenerate and
   Edit keep them. New check: `verify-attachments.mjs`.
+- **A2UI dashboards.** A new lead tool, `render_dashboard`, lays out an overview in the chat as an
+  A2UI component list: headline metrics, charts placed by id, and a small table. It is drawn by
+  CopilotKit's A2UI renderer with the workbench's own components, in light and dark, and comes
+  back when the conversation is reopened. New check: `verify-dashboard.mjs`.
+- Line charts no longer clip their first and last axis labels.
 
 ## v0.1.0 — 2026-10-15
 

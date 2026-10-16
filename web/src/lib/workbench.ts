@@ -160,6 +160,7 @@ export function summarizeTool(
       return Array.isArray(todos) ? `${todos.length} steps` : "";
     }
     case "render_chart":
+    case "render_dashboard":
       return str(args.title) ?? "";
     default:
       return "";

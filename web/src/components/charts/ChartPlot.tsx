@@ -175,6 +175,9 @@ function FacetChart({
         stroke="var(--wb-border-strong)"
         tickLine={false}
         interval={0}
+        // A line's first and last points sit on the plot's edges; without
+        // padding their centred labels are cut off there.
+        padding={chart.chartType === "line" ? { left: 18, right: 18 } : undefined}
         hide={!showCategories}
         height={showCategories ? 8 + tickLines * 13 : 0}
         tick={<WrappedTick maxLines={tickLines} />}
