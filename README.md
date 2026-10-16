@@ -9,7 +9,10 @@ in a sandbox to compute and chart, writes artifacts to a virtual filesystem, and
 it live — plan board, subagent timeline, file explorer, artifact canvas — while pausing for your
 approval on anything expensive.
 
-> **Status:** in active development. See [Roadmap](#roadmap).
+![The workbench mid-conversation: the lead's answer in the chat, its finished plan and the researchers' searches in the middle, and the files and sandbox output on the right](docs/screenshots/workbench.png)
+
+> **Status:** v0.1.0 — runs locally end to end. The managed layer (schedules, deployment, real
+> sign-in) is next; see [Roadmap](#roadmap). [More screenshots](#screenshots).
 
 ---
 
@@ -623,6 +626,30 @@ toggle let you run the same question both ways and compare cost, latency, and ou
 
 ---
 
+## Screenshots
+
+All taken from real research runs stored in the local history, regenerated with
+`node web/scripts/screenshots.mjs` (zero API cost; it blocks every run request).
+
+| | |
+|---|---|
+| ![Three researchers working in parallel, each with its own lane: the question it was given, its search count, its notes file and a summary](docs/screenshots/research-lanes.png) | ![A report from the Workspace, opened full screen: a headline table of low, base and high estimates and a bar chart comparing the two methods](docs/screenshots/report.png) |
+| **Parallel research.** Each `task` delegation is a lane with its own steps, searches and notes. | **Reports.** Markdown with embedded charts, from the Workspace; download as `.md` or PDF. |
+| ![A chart opened full screen, with a list of the conversation's charts and Table, PNG, SVG and CSV controls](docs/screenshots/charts.png) | ![An approval card: a plain-language description of the command, the files it uses and saves, a warning that it connects to the internet, the exact command, and Run it, Change it and Don't run buttons](docs/screenshots/approval.png) |
+| **Charts.** Every `render_chart` call lands in the Sandbox gallery; full screen adds a table view and exports. | **Approvals.** Nothing runs in the sandbox without your OK (the request shown is an example). |
+
+![The same workbench in dark mode, on a conversation about Bitcoin's outlook](docs/screenshots/workbench-dark.png)
+
+<p>
+  <img src="docs/screenshots/phone-chat.png" alt="The workbench on a phone, showing the conversation with a view switch for Chat, History, Plan and Workspace" width="260">
+  &nbsp;
+  <img src="docs/screenshots/phone-plan.png" alt="The workbench on a phone with the Plan view selected: the finished plan and the activity timeline" width="260">
+</p>
+
+Dark mode follows the system. On a phone, the view switch shows one panel group at a time.
+
+---
+
 ## Quickstart
 
 **Prerequisites:** Python 3.14, Node 20+, [uv](https://docs.astral.sh/uv/) ≥ 0.12.
@@ -666,7 +693,7 @@ Open <http://localhost:3000>.
 - [x] **6** — Human-in-the-loop approvals, frontend tools
 - [x] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
-- [ ] **9** — Design pass, screenshots, v0.1.0
+- [x] **9** — Design pass, screenshots, v0.1.0
 
 ---
 
@@ -675,6 +702,7 @@ Open <http://localhost:3000>.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — why it's built this way: the research, the
   rejected approaches, and what was verified by execution rather than assumed
 - **[CLAUDE.md](CLAUDE.md)** — working conventions, run commands, MDA constraints, gotchas
+- **[CHANGELOG.md](CHANGELOG.md)** — what each release contains
 
 ### Upstream references
 

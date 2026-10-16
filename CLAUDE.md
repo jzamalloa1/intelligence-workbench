@@ -191,7 +191,8 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
   `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs` — run them after UI changes —
-  and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
+  and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump. README
+  screenshots come from `node scripts/screenshots.mjs` (stored conversations, runs blocked).
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
 - **The lead's reasoning is shown, not added.** The Claude models think by default with
@@ -268,4 +269,4 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
 - [x] **6** — Human-in-the-loop approvals, frontend tools
 - [x] **7** — Skills, memory, Context Meter, Cost Meter, provider toggle<br>&nbsp;&nbsp;&nbsp;&nbsp;⚠️ OpenAI verified up to the API (it answered "no credits remaining") — not a completed OpenAI run
 - [ ] **8** — Managed layer: schedules, identity, `mda deploy`
-- [ ] **9** — Design pass, screenshots, v0.1.0
+- [x] **9** — Design pass, screenshots, v0.1.0
