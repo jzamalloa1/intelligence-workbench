@@ -3,9 +3,12 @@ import type { UsageRecord } from "./usage-tracker";
 /**
  * Model prices and context windows for the Cost and Context meters.
  *
- * USD per million tokens, standard (global) tier, verified 2026-09-26 against:
+ * USD per million tokens, standard (global) tier. Anthropic verified 2026-10-15,
+ * OpenAI 2026-09-26, against:
  *   - Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
- *     (cache reads 0.1x input; 5-minute writes 1.25x; 1-hour writes 2x)
+ *     (cache reads 0.1x input — 0.05x on Opus 5.5 and Sonnet 5.5; 5-minute
+ *     writes 1.25x; 1-hour writes 2x. Haiku 5.5 has a second rate card for
+ *     prompts over 100,000 tokens, cache reads and writes included.)
  *   - OpenAI:    https://developers.openai.com/api/docs/pricing
  *     (short-context rates — OpenAI also has long-context rates, but the page
  *     doesn't state the threshold, so the meter uses these and says so)
@@ -21,9 +24,18 @@ export interface ModelInfo {
   output: number;
   /** Context window in tokens, when the provider publishes one. */
   contextWindow?: number;
+  /** Rates for a call whose whole prompt is over `above` tokens. */
+  longPrompt?: { above: number } & Omit<ModelInfo, "label" | "contextWindow" | "longPrompt">;
 }
 
 export const MODELS: Record<string, ModelInfo> = {
+  "claude-opus-5-5": { label: "Claude Opus 5.5", input: 4, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2, output: 20, contextWindow: 1_000_000 },
+  "claude-sonnet-5-5": { label: "Claude Sonnet 5.5", input: 2, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.1, output: 10, contextWindow: 1_000_000 },
+  "claude-haiku-5-5": {
+    label: "Claude Haiku 5.5", input: 0.1, cacheWrite5m: 0.125, cacheWrite1h: 0.2, cacheRead: 0.01, output: 0.5, contextWindow: 1_000_000,
+    longPrompt: { above: 100_000, input: 0.5, cacheWrite5m: 0.625, cacheWrite1h: 1, cacheRead: 0.05, output: 2.5 },
+  },
+  // Previous generation — kept so older conversations' meters stay priced.
   "claude-opus-5": { label: "Claude Opus 5", input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25, contextWindow: 1_000_000 },
   "claude-sonnet-5": { label: "Claude Sonnet 5", input: 2, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2, output: 10, contextWindow: 1_000_000 },
   "claude-haiku-4-5": { label: "Claude Haiku 4.5", input: 1, cacheWrite5m: 1.25, cacheWrite1h: 2, cacheRead: 0.1, output: 5, contextWindow: 200_000 },
@@ -33,14 +45,19 @@ export const MODELS: Record<string, ModelInfo> = {
 };
 
 export function modelInfo(model: string): ModelInfo | undefined {
-  // Tolerate dated snapshot ids ("claude-haiku-4-5-20251001").
-  return MODELS[model] ?? Object.entries(MODELS).find(([id]) => model.startsWith(id))?.[1];
+  // Tolerate dated snapshot ids ("claude-haiku-4-5-20251001"). Longest id first,
+  // so "claude-opus-5-5-…" never matches the "claude-opus-5" entry.
+  if (MODELS[model]) return MODELS[model];
+  const ids = Object.keys(MODELS).sort((a, b) => b.length - a.length);
+  const id = ids.find((k) => model.startsWith(`${k}-`));
+  return id ? MODELS[id] : undefined;
 }
 
 /** Cost of one call in USD, or undefined when the model isn't priced here. */
 export function callCost(r: UsageRecord): number | undefined {
-  const p = modelInfo(r.model);
-  if (!p) return undefined;
+  const info = modelInfo(r.model);
+  if (!info) return undefined;
+  const p = info.longPrompt && r.input > info.longPrompt.above ? info.longPrompt : info;
   const uncached = Math.max(0, r.input - r.cacheRead - r.cacheWrite5m - r.cacheWrite1h);
   return (
     (uncached * p.input +

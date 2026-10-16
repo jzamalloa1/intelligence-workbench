@@ -10,6 +10,13 @@ This catches provider errors at the model-call boundary and returns an assistant
 message explaining what happened and what to do about it. The run then completes
 normally with the explanation in the transcript, rather than dying.
 
+It also catches the one failure that isn't an error: a safety-classifier decline.
+The 5.5 models answer some requests with HTTP 200 and `stop_reason: "refusal"`,
+with empty or partial content — which would otherwise end the run in silence.
+Server-side fallbacks (`fallbacks: "default"`) would retry those on another model,
+but a mid-stream fallback adds a `fallback` content block and changes which blocks
+may be sent back, and langchain-anthropic doesn't handle either yet.
+
 The exception classes live in `langchain_core.exceptions` and are shared by
 `langchain-anthropic` and `langchain-openai`, so one handler covers both.
 """
@@ -97,6 +104,44 @@ def _explain(exc: Exception) -> str:
     return f"**{_NAMES.get(provider, provider)} call failed.**\n\n```\n{raw[:600]}\n```"
 
 
+def _declined(message: object) -> bool:
+    meta = getattr(message, "response_metadata", None) or {}
+    return isinstance(message, AIMessage) and meta.get("stop_reason") == "refusal"
+
+
+def _refusal_text(message: AIMessage) -> str:
+    details = message.response_metadata.get("stop_details") or {}
+    category = details.get("category") if isinstance(details, dict) else None
+    why = f" (category: `{category}`)" if category else ""
+    return (
+        f"**The model declined this request.** Its safety classifier flagged it{why}, "
+        "so nothing it had started was kept.\n\nRephrase the question, or start a new "
+        "conversation on the other provider with the switch in the header."
+    )
+
+
+def _without_refusal(response: ModelResponse | AIMessage) -> ModelResponse | AIMessage:
+    """Replace a declined reply with an explanation, keeping its id.
+
+    The partial output of a mid-stream decline is discarded — including any tool
+    calls, which must not run — and the same id lets the explanation replace the
+    streamed partial in the chat.
+    """
+    messages = response.result if isinstance(response, ModelResponse) else [response]
+    if not any(_declined(m) for m in messages):
+        return response
+    replaced = [
+        AIMessage(content=_refusal_text(m), id=m.id, response_metadata=m.response_metadata)
+        if _declined(m)
+        else m
+        for m in messages
+    ]
+    logger.warning("Model declined the request: %s", messages[-1].response_metadata.get("stop_details"))
+    if isinstance(response, ModelResponse):
+        return ModelResponse(result=replaced, structured_response=response.structured_response)
+    return replaced[0]
+
+
 class FriendlyErrorMiddleware(AgentMiddleware):
     """Converts provider errors into an explanatory assistant message."""
 
@@ -114,7 +159,7 @@ class FriendlyErrorMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse | AIMessage:
         try:
-            return handler(request)
+            return _without_refusal(handler(request))
         except _PROVIDER_ERRORS as exc:
             return self._message(exc)
 
@@ -124,6 +169,6 @@ class FriendlyErrorMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse | AIMessage:
         try:
-            return await handler(request)
+            return _without_refusal(await handler(request))
         except _PROVIDER_ERRORS as exc:
             return self._message(exc)

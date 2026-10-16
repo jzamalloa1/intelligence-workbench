@@ -29,14 +29,16 @@ class Tier:
     """One role's model plus the knobs that control how hard it thinks."""
 
     model: str
-    # OpenAI reasoning models only. GPT-5.6 accepts none|low|medium|high|xhigh|max.
-    # langchain-openai's docstring still lists the older four values, but the field
-    # is a pass-through string, so the newer levels work.
+    # How hard the model thinks. Anthropic: `output_config.effort` — thinking is
+    # adaptive and always on for the 5.5 models, so this is the only control.
+    # OpenAI: reasoning effort; GPT-5.6 accepts none|low|medium|high|xhigh|max
+    # (langchain-openai's docstring lists the older four, but the field is a
+    # pass-through string, so the newer levels work).
     effort: str | None = None
     # Return a readable summary of the model's reasoning, for the chat's
     # reasoning cards. Lead only — subagents run hidden and non-streaming.
-    # Anthropic: Opus 5 already thinks by default with `display: "omitted"`, and
-    # billing is identical either way — "summarized" only makes it visible.
+    # Anthropic: the models think either way with `display: "omitted"` by
+    # default, and billing is identical — "summarized" only makes it visible.
     # OpenAI: reasoning tokens are billed whether or not a summary is returned.
     show_reasoning: bool = False
 
@@ -52,10 +54,13 @@ class ModelProfile:
 PROFILES: dict[Provider, ModelProfile] = {
     "anthropic": ModelProfile(
         provider="anthropic",
-        # Opus 5 plans and synthesizes; thinking is adaptive and on by default.
-        lead=Tier(model="claude-opus-5", show_reasoning=True),
-        worker=Tier(model="claude-sonnet-5"),
-        cheap=Tier(model="claude-haiku-4-5"),
+        # Effort is explicit because the defaults differ per model (Opus 5.5:
+        # medium, Sonnet 5.5: high). Opus 5.5 at medium matches or beats Opus 5
+        # at high on knowledge work, per Anthropic's migration guide; the
+        # researchers keep Sonnet's default. Re-tune these against real runs.
+        lead=Tier(model="claude-opus-5-5", effort="medium", show_reasoning=True),
+        worker=Tier(model="claude-sonnet-5-5", effort="high"),
+        cheap=Tier(model="claude-haiku-5-5", effort="low"),
     ),
     "openai": ModelProfile(
         provider="openai",
@@ -122,6 +127,17 @@ def _tier(role: Role, provider: Provider | None = None) -> Tier:
     return getattr(profile, effective)
 
 
+#: Thinking blocks on the 5.5 models are bound to the exact conversation that
+#: produced them: if the system prompt, the tools, or any earlier message differs
+#: when a block is replayed, the API rejects the request (enforced by default for
+#: accounts created on or after 2026-08-31). Parts of our stack rewrite the prefix
+#: and aren't ours to make append-only — deepagents' summarization replaces old
+#: turns, and the memory and skills middleware re-render the system prompt — so
+#: blocks that no longer match are dropped instead of failing the run.
+_THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
+_BLOCK_BINDING = {"prefix_mismatch_behavior": "drop_block"}
+
+
 def build_model(role: Role, *, stream: bool = True, provider: Provider | None = None) -> BaseChatModel:
     """Return a configured chat model for ``role`` on the active provider.
 
@@ -140,11 +156,16 @@ def build_model(role: Role, *, stream: bool = True, provider: Provider | None = 
     tier = _tier(role, profile.provider)
 
     if profile.provider == "anthropic":
-        extra: dict = {}
+        thinking: dict = {"type": "adaptive", "block_binding": _BLOCK_BINDING}
         if tier.show_reasoning and stream:
-            # The shape langchain-anthropic itself sends for Opus 4.7+/Sonnet 5.
-            extra["thinking"] = {"type": "adaptive", "display": "summarized"}
-        return ChatAnthropic(model=tier.model, disable_streaming=not stream, **extra)
+            thinking["display"] = "summarized"
+        return ChatAnthropic(
+            model=tier.model,
+            disable_streaming=not stream,
+            effort=tier.effort,
+            thinking=thinking,
+            betas=[_THINKING_BINDING_BETA],
+        )
 
     # OpenAI: GPT-5.6 guidance is to use the Responses API for reasoning,
     # tool-calling, and multi-turn work — which is all three of what we do here.

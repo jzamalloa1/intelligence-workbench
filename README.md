@@ -121,7 +121,7 @@ Every model call above — lead **and** subagents — passes through the same mi
 | 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
 | 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
 | 3 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
-| 4 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
+| 4 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider. A safety-classifier decline (`stop_reason: "refusal"`) is replaced the same way, partial tool calls dropped | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
 | 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
 | 6 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
 
@@ -236,9 +236,9 @@ suggestions would cost an extra model call through the deep agent every turn. Ch
 
 **You see how it reasoned.** The lead model's thinking summary renders as a **Reasoning**
 card above its answer: it shimmers "Thinking…" while it streams, then folds away. This costs
-nothing extra on Anthropic. Opus 5 already thinks adaptively by default with `display: "omitted"`
-(billed, never shown), and billing is identical with `display: "summarized"`, which is all
-`agent_core/models.py` changes, for the lead only. On OpenAI the lead asks for
+nothing extra on Anthropic. Opus 5.5 always thinks adaptively, with `display: "omitted"` by
+default (billed, never shown), and billing is identical with `display: "summarized"`, which is
+all `agent_core/models.py` changes, for the lead only. On OpenAI the lead asks for
 `reasoning.summary: "auto"`; that path hasn't been run end to end (no OpenAI credits). Thinking
 tokens were already part of `output_tokens`, so the Cost meter is unchanged. Opus decides per
 request whether to think, so many quick replies have no card. The summaries are display-only:
@@ -616,9 +616,9 @@ toggle let you run the same question both ways and compare cost, latency, and ou
 
 | Role | `LLM_PROVIDER=anthropic` | `LLM_PROVIDER=openai` |
 |---|---|---|
-| Lead (plan/synthesize) | `claude-opus-5` | `gpt-5.6-terra` |
-| Worker (research/analyze) | `claude-sonnet-5` | `gpt-5.6-terra` @ effort `low` |
-| Cheap (extract/classify) | `claude-haiku-4-5` | `gpt-5.6-luna` |
+| Lead (plan/synthesize) | `claude-opus-5-5` @ effort `medium` | `gpt-5.6-terra` @ effort `medium` |
+| Worker (research/analyze) | `claude-sonnet-5-5` @ effort `high` | `gpt-5.6-terra` @ effort `low` |
+| Cheap (extract/classify) | `claude-haiku-5-5` @ effort `low` | `gpt-5.6-luna` @ effort `low` |
 
 ---
 

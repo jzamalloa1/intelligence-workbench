@@ -23,10 +23,10 @@ const modelEnd = (model, ns, usage) => ({
     data: { output: { usage_metadata: usage } },
   },
 });
-// Lead: 10,000 in (9,000 cache-written), 500 out → 1,000×$5 + 9,000×$6.25 + 500×$25 = $0.07375
-const LEAD = modelEnd("claude-opus-5", "model:x", { input_tokens: 10_000, output_tokens: 500, input_token_details: { cache_creation: 9_000, cache_read: 0 } });
-// Researcher: 5,000 in (4,000 read from cache), 200 out → 1,000×$2 + 4,000×$0.20 + 200×$10 = $0.0048
-const SUB = modelEnd("claude-sonnet-5", "tools:a|tools:b", { input_tokens: 5_000, output_tokens: 200, input_token_details: { cache_read: 4_000, cache_creation: 0, ephemeral_5m_input_tokens: 0 } });
+// Lead: 10,000 in (9,000 cache-written), 500 out → 1,000×$4 + 9,000×$5 + 500×$20 = $0.059
+const LEAD = modelEnd("claude-opus-5-5", "model:x", { input_tokens: 10_000, output_tokens: 500, input_token_details: { cache_creation: 9_000, cache_read: 0 } });
+// Researcher: 5,000 in (4,000 read from cache), 200 out → 1,000×$2 + 4,000×$0.10 + 200×$10 = $0.0044
+const SUB = modelEnd("claude-sonnet-5-5", "tools:a|tools:b", { input_tokens: 5_000, output_tokens: 200, input_token_details: { cache_read: 4_000, cache_creation: 0, ephemeral_5m_input_tokens: 0 } });
 
 function stream(body, turn) {
   const { previous } = takeUsageFromInput(body);
@@ -73,21 +73,21 @@ await send("first");
 await page.getByText("Turn 1 done.").waitFor();
 const meter = page.getByRole("button", { name: /Context.*Cost/ });
 await meter.waitFor();
-// Per turn: $0.07375 + $0.0048 = $0.07855.
-check((await meter.innerText()).includes("$0.08"), `cost after turn 1 is $0.08 (got "${(await meter.innerText()).replace(/\s+/g, " ")}")`);
+// Per turn: $0.059 + $0.0044 = $0.0634.
+check((await meter.innerText()).includes("$0.06"), `cost after turn 1 is $0.06 (got "${(await meter.innerText()).replace(/\s+/g, " ")}")`);
 
 await send("second");
 await page.getByText("Turn 2 done.").waitFor();
 const carried = bodies[1]?.state?.workbenchUsage;
 check(Array.isArray(carried) && carried.length === 2, `turn 2's input carries turn 1's usage (${carried?.length ?? 0} records)`);
-check((await meter.innerText()).includes("$0.16"), `cost accumulates across turns → $0.16 (got "${(await meter.innerText()).replace(/\s+/g, " ")}")`);
+check((await meter.innerText()).includes("$0.13"), `cost accumulates across turns → $0.13 (got "${(await meter.innerText()).replace(/\s+/g, " ")}")`);
 
 await meter.click();
 const pop = page.getByRole("dialog", { name: "Usage for this conversation" });
 await pop.waitFor();
 check(await pop.getByText("4 model calls").isVisible(), "breakdown counts 4 calls");
-check(await pop.getByRole("cell", { name: /Claude Opus 5\s*lead/ }).isVisible(), "lead row");
-check(await pop.getByRole("cell", { name: /Claude Sonnet 5\s*subagents/ }).isVisible(), "subagent row");
+check(await pop.getByRole("cell", { name: /Claude Opus 5\.5\s*lead/ }).isVisible(), "lead row");
+check(await pop.getByRole("cell", { name: /Claude Sonnet 5\.5\s*subagents/ }).isVisible(), "subagent row");
 check(await pop.getByText("% of 1M").isVisible(), "context shown against the model's 1M window");
 await page.screenshot({ path: `${OUT}/usage.png` });
 

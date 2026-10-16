@@ -517,9 +517,11 @@ subagent takes its own `model` override.
 
 | Role | anthropic | openai |
 |---|---|---|
-| Lead | `claude-opus-5` | `gpt-5.6-terra` |
-| Worker | `claude-sonnet-5` | `gpt-5.6-terra` @ effort `low` |
-| Cheap | `claude-haiku-4-5` | `gpt-5.6-luna` |
+| Lead | `claude-opus-5-5` @ effort `medium` | `gpt-5.6-terra` @ effort `medium` |
+| Worker | `claude-sonnet-5-5` @ effort `high` | `gpt-5.6-terra` @ effort `low` |
+| Cheap | `claude-haiku-5-5` @ effort `low` | `gpt-5.6-luna` @ effort `low` |
+
+The cheap tier is defined but nothing calls it yet.
 
 GPT-5.6 (Jul 2026): `sol` flagship · `terra` balanced ($2/$12 per MTok) · `luna` high-volume
 ($0.20/$1.20, ~1.05M context).
@@ -630,6 +632,31 @@ coin-change question streamed REASONING_* events (a summary) and then the answer
 `output_tokens` 711 including the thinking. A trivial question produced no thinking block at all,
 since adaptive thinking decides per request. The adapter's final MESSAGES_SNAPSHOT omits reasoning,
 so `SubagentTracker` re-inserts it.
+
+**Claude 5 → 5.5 models (2026-10-15).** Lead Opus 5 → Opus 5.5, researchers Sonnet 5 → Sonnet
+5.5, cheap Haiku 4.5 → Haiku 5.5; langchain-anthropic 1.7.5 → 1.7.6 (the first with a Haiku 5.5
+profile). What had to change, from Anthropic's migration guide and the installed code:
+
+- **Effort is explicit.** Thinking is always on for the 5.5 models; effort is the only control,
+  and the defaults differ (Opus 5.5 `medium`, Sonnet 5.5 `high`). The guide says Opus 5.5 at
+  `medium` matches or beats Opus 5 at `high` on knowledge work, so the lead runs at `medium`.
+- **Thinking blocks are bound to their conversation.** Replaying one after the system prompt,
+  tools, or an earlier message changed is a 400 for accounts created on or after 2026-08-31.
+  deepagents' summarization and the memory/skills middleware rewrite that prefix, so every tier
+  sends `block_binding: {prefix_mismatch_behavior: "drop_block"}` (beta
+  `thinking-binding-controls-2026-08-01`): a stale block is dropped, never fatal.
+- **Forced `tool_choice` is a 400** on Opus 5.5 and Sonnet 5.5. Nothing in our stack sends it
+  (checked deepagents, copilotkit, and our code); langchain-anthropic already guards its own use.
+- **Refusals.** A safety-classifier decline is HTTP 200 with `stop_reason: "refusal"`.
+  `FriendlyErrorMiddleware` replaces it with a readable message (dropping any partial tool
+  calls). Server-side `fallbacks` are deliberately off: a mid-stream fallback adds a `fallback`
+  content block and changes which blocks may be sent back, and langchain-anthropic handles
+  neither yet.
+- **Prices.** `pricing.ts` gained the 5.5 rates (cache reads 0.05x on Opus/Sonnet 5.5) and
+  Haiku 5.5's second rate card above 100K prompt tokens. Its prefix match had a latent bug:
+  `claude-opus-5-5` would have been priced as `claude-opus-5`. Longest id now wins.
+- **Live (6 small calls):** lead tool loop, researcher, and cheap tier directly; one full run
+  through the web app streamed a reasoning summary and the right answer (292) on Opus 5.5.
 
 **CopilotKit 1.74 → 1.78, AG-UI 0.0.x → 1.0 (2026-10-09).** Read off source diffs of the
 installed and new tarballs. What touches us:

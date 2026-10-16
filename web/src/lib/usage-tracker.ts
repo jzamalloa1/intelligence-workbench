@@ -25,7 +25,7 @@ import { EventType, type RunAgentInput } from "@ag-ui/client";
 export const USAGE_STATE_KEY = "workbenchUsage";
 
 export interface UsageRecord {
-  /** e.g. "claude-opus-5". */
+  /** e.g. "claude-opus-5-5". */
   model: string;
   provider: string;
   /** The lead agent, or a subagent running inside a `task` call. */

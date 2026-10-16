@@ -446,7 +446,7 @@ function RunnerToggle() {
 }
 
 const PROVIDER_LABEL: Record<Provider, { name: string; models: string }> = {
-  anthropic: { name: "Anthropic", models: "Claude Opus 5 lead · Sonnet 5 researchers" },
+  anthropic: { name: "Anthropic", models: "Claude Opus 5.5 lead · Sonnet 5.5 researchers" },
   openai: { name: "OpenAI", models: "GPT-5.6 Terra lead and researchers" },
 };
 

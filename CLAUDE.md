@@ -138,7 +138,7 @@ deploy time.
   there, and treat its contents as untrusted input.
 - Restart `mda dev` after adding `memory.py`, `identity.py`, `skills/`, `schedules/`, `channels/` — they're
   discovered at compile time, not hot-reloaded.
-- Model IDs need the provider prefix (`anthropic:claude-opus-5`). Python uses `google_genai:`,
+- Model IDs need the provider prefix (`anthropic:claude-opus-5-5`). Python uses `google_genai:`,
   TS uses `google-genai:`, Gateway uses `provider/model`.
 
 ---
@@ -194,9 +194,11 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump.
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
   against. Never quote remembered prices — re-fetch the providers' pricing pages.
-- **The lead's reasoning is shown, not added.** Opus 5 thinks by default with `display:
-  "omitted"`; `models.py` sets `thinking={"type": "adaptive", "display": "summarized"}` on the
-  lead (same bill, visible summary). Don't turn it on for subagents: they run hidden and
+- **The lead's reasoning is shown, not added.** The Claude models think by default with
+  `display: "omitted"`; `models.py` sets `display: "summarized"` on the lead (same bill, visible
+  summary). Effort is set explicitly per tier (the 5.5 defaults differ per model), and every
+  Anthropic tier sends `block_binding: drop_block` so a rewritten prefix drops stale thinking
+  blocks instead of failing the run (ARCHITECTURE §6). Don't turn it on for subagents: they run hidden and
   non-streaming. Reasoning messages are display-only and stripped from run input.
 - **Regenerate / Edit rewind the thread** via `forwardedProps.workbenchRewind` →
   `WorkbenchLangGraphAgent.rewind` → the adapter's `prepareRegenerateStream`. The marker must be

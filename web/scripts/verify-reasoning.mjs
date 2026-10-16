@@ -1,7 +1,7 @@
 /**
  * Verifies the reasoning cards WITHOUT calling the agent (zero API cost). The
  * synthetic run streams a thinking summary the way @ag-ui/langgraph emits it
- * for Opus 5 with `display: "summarized"` (REASONING_* events, then the
+ * for the lead with `display: "summarized"` (REASONING_* events, then the
  * answer), ending in a snapshot that — like the real adapter's — holds no
  * reasoning. It goes through the real SubagentTracker, as on the server.
  *
