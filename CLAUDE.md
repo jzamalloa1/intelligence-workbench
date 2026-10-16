@@ -190,7 +190,7 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   Reopening a thread: in-memory replay → agent server state → stored snapshot, in that order.
 - **Zero-cost UI checks** (no model calls): `node scripts/verify-toggle.mjs`,
   `verify-charts.mjs`, `verify-approval.mjs`, `verify-history.mjs`, `verify-subagents.mjs`,
-  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs` — run them after UI changes —
+  `verify-usage.mjs`, `verify-memory.mjs`, `verify-provider.mjs`, `verify-lanes.mjs`, `verify-chat.mjs`, `verify-reasoning.mjs`, `verify-layout.mjs`, `verify-attachments.mjs` — run them after UI changes —
   and `npx tsx scripts/verify-adapter.ts` after any `@ag-ui` or CopilotKit bump. README
   screenshots come from `node scripts/screenshots.mjs` (stored conversations, runs blocked).
 - **Prices live in `web/src/lib/pricing.ts` only**, with the date and source they were checked
@@ -237,6 +237,11 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   which must keep refusing non-public addresses.
 - **Files are not in agent state when a sandbox is attached.** Derive the Workspace panel from
   `write_file` / `edit_file` tool calls, not from state. `todos` *is* in state.
+- **Attachments never stay in state as base64.** `AttachmentsMiddleware` saves each file to
+  `/workspace/attachments/` and replaces it with an `<attachment>` text note before the first
+  model call. A base64 CSV fails on Anthropic, and the summarizer counts non-image blocks by
+  length (ARCHITECTURE §6). The note format is parsed by `web/src/lib/attachments.ts`
+  (`parseNote`), so change `_note()` and `NOTE` together.
 
 - **Subagent models must have `disable_streaming=True`.** deepagents runs subagents inline via
   `.invoke()`, so their token events surface at the run root and splice into the parent's

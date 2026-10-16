@@ -20,8 +20,9 @@ import { PlanBoard } from "@/components/PlanBoard";
 import { SandboxPanel } from "@/components/SandboxPanel";
 import { ToolCard } from "@/components/ToolCard";
 import { DelegationGroup, ResearchBanner, TaskLaneCard } from "@/components/ResearchLanes";
-import { EditBar, useMessageActions, useWorkbenchSuggestions, WelcomeHero } from "@/components/ChatExtras";
+import { AttachButton, AttachmentNotice, EditBar, useMessageActions, useWorkbenchSuggestions, WelcomeHero } from "@/components/ChatExtras";
 import { ReasoningCard } from "@/components/ReasoningCard";
+import { attachmentsConfig, withAttachmentChips } from "@/lib/attachments";
 import { deriveLanes, LanesContext, taskCallIds, withoutSubagentRows } from "@/lib/lanes";
 import { Workspace } from "@/components/Workspace";
 import { chartSlug, deriveFromMessages, readTodos, type Chart } from "@/lib/workbench";
@@ -133,6 +134,8 @@ function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
   const actions = useMessageActions(agent);
   const showWelcome = useSettled(messages.length === 0 && !running, 400);
   const { onRegenerate, onEditMessage } = actions;
+  const [fileError, setFileError] = useState<string | null>(null);
+  const attachments = useMemo(() => attachmentsConfig(setFileError), []);
   const messageView = useMemo(
     () => ({
       ...MESSAGE_VIEW,
@@ -177,14 +180,12 @@ function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
                   editing={actions.editing}
                   onChange={(text) => actions.setEditing((e) => (e ? { ...e, text } : e))}
                   onCancel={() => actions.setEditing(null)}
-                  onSubmit={() => {
-                    actions.rewind(actions.editing!.id, actions.editing!.text);
-                    actions.setEditing(null);
-                  }}
+                  onSubmit={actions.submitEdit}
                 />
               ) : null}
+              {fileError ? <AttachmentNotice message={fileError} onDismiss={() => setFileError(null)} /> : null}
               <div className="relative min-h-0 flex-1">
-                <CopilotChat agentId="workbench" messageView={messageView} input={CHAT_INPUT} />
+                <CopilotChat agentId="workbench" messageView={messageView} attachments={attachments} input={CHAT_INPUT} />
                 {showWelcome ? (
                   // Centred with margins, not align-items, so a hero taller than
                   // the space scrolls from its top instead of clipping it.
@@ -304,13 +305,14 @@ function groupDelegations(messages: Parameters<typeof withoutSubagentRows>[0]): 
   );
 }
 
-const MESSAGE_VIEW = { transformMessages: withoutSubagentRows, groupMessages: groupDelegations };
+/** The lead's conversation, with the agent's attachment notes shown as file chips. */
+function chatMessages(messages: Parameters<typeof withoutSubagentRows>[0]) {
+  return withAttachmentChips(withoutSubagentRows(messages));
+}
 
-/**
- * The input's "+" opens a menu of attachments and tools. We configure neither
- * (the agent doesn't take files yet), so it would open an empty menu.
- */
-const CHAT_INPUT = { addMenuButton: () => null };
+const MESSAGE_VIEW = { transformMessages: chatMessages, groupMessages: groupDelegations };
+
+const CHAT_INPUT = { addMenuButton: AttachButton };
 
 /**
  * `value`, but only once it has held for `ms`. A reopened conversation is empty

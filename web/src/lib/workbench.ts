@@ -1,4 +1,5 @@
 import { contentToText, type ContentPart, type Message } from "@ag-ui/core";
+import { notesIn } from "./attachments";
 
 /**
  * A tool result as display text. Since AG-UI 1.0 a tool message's content can
@@ -41,6 +42,8 @@ export interface WorkspaceFile {
   lastTool: string;
   /** Written by a subagent (e.g. a researcher's `/research/` notes), not the lead. */
   bySubagent: boolean;
+  /** Attached by the user in the chat (saved under /workspace/attachments/). */
+  attached?: boolean;
 }
 
 export interface Activity {
@@ -262,6 +265,12 @@ export function deriveFromMessages(messages: readonly Message[]): Derived {
       subagentRunId?: string | null;
     };
     const bySubagent = typeof m.subagentRunId === "string";
+
+    if (m.role === "user") {
+      for (const note of notesIn(m.content)) {
+        if (note.path) files.set(note.path, { path: note.path, content: note.content, revisions: 1, lastTool: "attach", bySubagent: false, attached: true });
+      }
+    }
 
     if (m.role === "assistant" && Array.isArray(m.toolCalls)) {
       for (const call of m.toolCalls) {

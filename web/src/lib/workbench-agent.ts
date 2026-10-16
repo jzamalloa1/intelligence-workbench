@@ -1,6 +1,7 @@
 import { type RunAgentInput } from "@ag-ui/client";
 import { LangGraphAgent } from "@ag-ui/langgraph";
 import { Observable } from "rxjs";
+import { toLangChainContent } from "./attachments";
 import { addressResume, resumeMap, type PendingInterrupt } from "./interrupt-resume";
 import { SubagentTracker, withoutReasoningMessages, withoutSubagentMessages } from "./subagent-tracker";
 import { takeUsageFromInput, UsageTracker } from "./usage-tracker";
@@ -110,7 +111,7 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
   private async rewind(
     input: Parameters<LangGraphAgent["prepareStream"]>[0],
     streamMode: Parameters<LangGraphAgent["prepareStream"]>[1],
-    { messageId, content }: { messageId: string; content: string },
+    { messageId, content }: Rewind,
   ) {
     const { workbenchRewind: _drop, ...forwardedProps } = input.forwardedProps ?? {};
     void _drop;
@@ -120,9 +121,12 @@ export class WorkbenchLangGraphAgent extends LangGraphAgent {
       this.activeRun.threadId = thread.thread_id;
       this.activeRun.schemaKeys ??= await this.getSchemaKeys();
     }
+    // LangChain blocks as plain objects; the adapter's type wants its own
+    // MessageContent classes but only passes the value through to LangGraph.
+    const lcContent = toLangChainContent(content) as string;
     try {
       return await this.prepareRegenerateStream(
-        { ...input, forwardedProps, threadId: thread.thread_id, messageCheckpoint: { id: messageId, type: "human", content } },
+        { ...input, forwardedProps, threadId: thread.thread_id, messageCheckpoint: { id: messageId, type: "human", content: lcContent } },
         streamMode,
       );
     } catch (err) {
@@ -164,9 +168,12 @@ function nameAnonymousToolMessages(event: any) {
   }
 }
 
-function rewindRequest(forwardedProps: unknown): { messageId: string; content: string } | undefined {
+/** The question to re-run from: plain text, or content parts when it carries files. */
+type Rewind = { messageId: string; content: Parameters<typeof toLangChainContent>[0] };
+
+function rewindRequest(forwardedProps: unknown): Rewind | undefined {
   const r = (forwardedProps as { workbenchRewind?: { messageId?: unknown; content?: unknown } } | undefined)?.workbenchRewind;
-  return r && typeof r.messageId === "string" && typeof r.content === "string"
-    ? { messageId: r.messageId, content: r.content }
+  return r && typeof r.messageId === "string" && (typeof r.content === "string" || Array.isArray(r.content))
+    ? { messageId: r.messageId, content: r.content as Rewind["content"] }
     : undefined;
 }

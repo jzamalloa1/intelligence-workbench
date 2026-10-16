@@ -7,6 +7,7 @@ import {
   type AgentRunnerRunRequest,
 } from "@copilotkit/runtime/v2";
 import { Observable } from "rxjs";
+import { userText } from "../attachments";
 import { asProvider, PROVIDER_HEADER, USER_HEADER } from "../users";
 import { historyEvents, pendingInterruptsOf, snapshotFromLangGraph, uiState } from "./history-events";
 import { getSnapshot, saveSnapshot, touchThread } from "./history-store";
@@ -101,14 +102,9 @@ function headerOf(headers: Record<string, string> | undefined, name: string): st
   return key ? headers[key] : undefined;
 }
 
+/** The title source: what the user typed first, without attachment notes. */
 function firstUserText(messages: readonly { role: string; content?: unknown }[]): string {
-  const first = messages.find((m) => m.role === "user");
-  const content = first?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((p) => (p && typeof p === "object" && "text" in p ? String(p.text) : "")).join(" ");
-  }
-  return "";
+  return userText(messages.find((m) => m.role === "user")?.content).replace(/\n/g, " ");
 }
 
 async function snapshot(

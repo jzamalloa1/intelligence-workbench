@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **File attachments.** A paperclip in the chat input attaches images, PDFs, CSV/TSV, text,
+  Markdown, JSON or Excel files, up to 5 MB each. Images are downscaled to Claude's 2576 px limit.
+  The agent saves each file to the conversation's sandbox under `/workspace/attachments/` and
+  reads a note with its contents: the whole file, a preview, or a PDF's extracted text. The chat
+  shows the files as chips, the Workspace lists them as "Attached by you", and Regenerate and
+  Edit keep them. New check: `verify-attachments.mjs`.
+
 ## v0.1.0 — 2026-10-15
 
 The first release. Everything runs locally: the agent under `mda dev`, the web app under

@@ -136,6 +136,16 @@ html:root [data-copilotkit] {
   other panel (12-13px) and wraps hard in a narrow column. 14px keeps it the
   most readable text on screen without shouting.
 */
+/*
+ * An attached file's chip in a sent message. The file is in the conversation's
+ * sandbox, out of the browser's reach, so the chip is a label, not a link
+ * (lib/attachments.ts, SANDBOX_FILE_URL).
+ */
+html:root [data-copilotkit] a[href="about:blank#sandbox-file"] {
+  pointer-events: none;
+  cursor: default;
+}
+
 html:root [data-copilotkit] .cpk\:prose {
   font-size: 0.875rem;
   line-height: 1.65;

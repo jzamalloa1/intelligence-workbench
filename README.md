@@ -89,6 +89,9 @@ flowchart TD
     end
     LG --> MDA
 
+    LG -->|"files attached to the message"| ATT["AttachmentsMiddleware<br/>saves each file to the sandbox,<br/>leaves a text note in its place"]
+    ATT -->|"/workspace/attachments/"| SB
+    ATT --> LEAD
     LG --> LEAD["Lead agent\nbuild_model('lead')"]
     MDA -. "system prompt + memory" .-> LEAD
 
@@ -123,10 +126,11 @@ Every model call above — lead **and** subagents — passes through the same mi
 |---|---|---|---|
 | 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
 | 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
-| 3 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
-| 4 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider. A safety-classifier decline (`stop_reason: "refusal"`) is replaced the same way, partial tool calls dropped | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
-| 5 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
-| 6 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
+| 3 | `AttachmentsMiddleware()` | Before the first model call, saves files attached to the new message into the sandbox and replaces their bytes in state with `<attachment>` notes (images keep theirs) — see § Attached files | A `before_agent` hook only, so it wraps no model call; anywhere before the first call works. Lead only — researchers never receive the user's message |
+| 4 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
+| 5 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider. A safety-classifier decline (`stop_reason: "refusal"`) is replaced the same way, partial tool calls dropped | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
+| 6 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
+| 7 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
 
 ### The subagent math
 
@@ -155,6 +159,31 @@ be the one that can run commands; the lead only ever sees their summaries. And a
 come only from the lead, one decision about real analysis at a time, not "researcher 3 wants to
 curl a page". Researchers still inherit the lead's `interrupt_on`, so if the middleware were
 ever removed the shell would come back gated, not open.
+
+### Attached files
+
+The paperclip in the chat input attaches images, PDFs, CSV/TSV, text, Markdown, JSON or Excel
+(5 MB each; images are downscaled in the browser to Claude's 2576 px limit). They travel as AG-UI
+content parts, and `@ag-ui/langgraph` turns them into LangChain blocks: an `image_url` for an
+image, a base64 `file` block for anything else.
+
+`AttachmentsMiddleware` (`middleware/attachments.py`) then rewrites that message once, before the
+lead's first model call:
+
+- Each file is written to `/workspace/attachments/` in the conversation's sandbox. That is the
+  directory MDA's own Slack integration uses, and the lead can `read_file` it or load it with Python.
+- Each non-image block is replaced by an `<attachment>` text note giving the name, type, size,
+  path, and the contents: the whole file if it is small, a preview if not, or for a PDF its
+  extracted text (also saved next to it as `.txt`).
+- Images keep their bytes, so the model still sees them.
+
+Without the rewrite, a CSV fails the call (Anthropic takes base64 documents only as PDF), and the
+base64 stays in state. There, deepagents' summarization counts it by length, so a 1 MB PDF reads
+as about 330K tokens and compacts the conversation on the first call.
+
+The notes are plain text, so the message works for either provider and for the summarization
+model. The web app shows them as file chips (`web/src/lib/attachments.ts`) and lists the files
+in the Workspace panel as "Attached by you". Regenerate and Edit keep a message's files.
 
 ### Why subagents don't stream token-by-token
 
@@ -496,6 +525,8 @@ thread.
 | `tools/research.py` | Tavily search — lead and researchers |
 | `tools/fetch.py` | `fetch_url` — read one public page as text; researchers only. Refuses private/internal addresses, re-checked on every redirect |
 | `middleware/tool_access.py` | `HideToolsMiddleware` — takes `execute` away from the researcher (see § Researchers have no shell) |
+| `middleware/attachments.py` | `AttachmentsMiddleware` — attached files into the sandbox, `<attachment>` notes in their place (see § Attached files) |
+| `web/src/lib/attachments.ts` | The browser half: accepted types and sizes, image downscaling, notes shown as file chips, files kept on Regenerate / Edit |
 | `tools/charts.py` | `render_chart` — structured chart data, lead-only (see "Who sees what" above for why it's structured, not an image). Returns a `chart_id`; series carry a `unit`, and different units are drawn as separate panels, never one shared axis. `chart_slug` must match `chartSlug` in `web/src/lib/workbench.ts` |
 | `middleware/*.py` | See the ordered table above |
 | `skills/<name>/SKILL.md` | Procedures the lead loads when a task matches — see § Skills. Frontmatter `name` must equal the directory name |
@@ -596,6 +627,7 @@ sequenceDiagram
 | `write_todos` planning | Plan Board — live checklist, animates as todos flip status |
 | Reasoning | Reasoning card above each answer the lead thought about — its thinking summary, streamed live, folded when done |
 | Chat UX | Welcome screen with starter prompts, follow-up suggestion chips, Regenerate and Edit (the thread forks from the question's checkpoint) |
+| File attachments | Paperclip in the chat input: images, PDFs, CSV, text, JSON, Excel. Saved to the conversation's sandbox for analysis, shown as chips in the message and as "Attached by you" in the Workspace |
 | Layout & theme | Four columns on a wide screen; on a laptop the history sidebar tucks away, and below that a view switch shows one panel group at a time (history included on a phone). Light and dark follow the system, CopilotKit's chat included |
 | Subagents | Research lanes in the chat — one live card per delegation (status, latest step, searches, notes, answer), a progress-framed group for parallel delegations, a banner naming who is working; Activity Timeline for the full call list |
 | Virtual filesystem | File Explorer — tree, viewer, diff on `edit_file` |

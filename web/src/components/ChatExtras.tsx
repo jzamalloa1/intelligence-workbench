@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfigureSuggestions, useCopilotKit } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/core";
+import { userText, withUserText } from "@/lib/attachments";
 import type { ResearchLane } from "@/lib/lanes";
 import type { Chart, WorkspaceFile } from "@/lib/workbench";
 
@@ -149,7 +150,7 @@ type AgentLike = {
  */
 export function useMessageActions(agent: AgentLike | undefined) {
   const { copilotkit } = useCopilotKit();
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
 
   /** Sends a prompt as if typed — used by the welcome screen's starters. */
   const send = useCallback(
@@ -161,8 +162,9 @@ export function useMessageActions(agent: AgentLike | undefined) {
     [agent, copilotkit],
   );
 
+  /** Re-runs from a user message; `content` keeps its files when it has any. */
   const rewind = useCallback(
-    (messageId: string, content: string) => {
+    (messageId: string, content: Message["content"]) => {
       if (!agent || agent.isRunning) return;
       const index = agent.messages.findIndex((m) => m.id === messageId);
       if (index < 0) return;
@@ -181,16 +183,70 @@ export function useMessageActions(agent: AgentLike | undefined) {
       if (!agent) return;
       const index = agent.messages.findIndex((m) => m.id === message.id);
       const user = agent.messages.slice(0, index).findLast((m) => m.role === "user");
-      if (user) rewind(user.id, typeof user.content === "string" ? user.content : "");
+      if (user) rewind(user.id, user.content);
     },
     [agent, rewind],
   );
 
-  const onEditMessage = useCallback(({ message }: { message: Message }) => {
-    setEditing({ id: message.id, text: typeof message.content === "string" ? message.content : "" });
-  }, []);
+  const onEditMessage = useCallback(
+    ({ message }: { message: Message }) => {
+      // CopilotChat passes the message as displayed, with file chips in place of
+      // the agent's notes; re-run from the one the thread actually holds.
+      const raw = agent?.messages.find((m) => m.id === message.id) ?? message;
+      setEditing({ id: raw.id, text: userText(raw.content), content: raw.content });
+    },
+    [agent],
+  );
 
-  return { editing, setEditing, send, rewind, onRegenerate, onEditMessage };
+  /** Re-runs from the message being edited: the new text, the same files. */
+  const submitEdit = useCallback(() => {
+    if (!editing) return;
+    rewind(editing.id, withUserText(editing.content, editing.text) as Message["content"]);
+    setEditing(null);
+  }, [editing, rewind]);
+
+  return { editing, setEditing, send, rewind, onRegenerate, onEditMessage, submitEdit };
+}
+
+type Editing = { id: string; text: string; content: Message["content"] };
+
+/**
+ * Replaces the chat input's "+" menu, whose only item would be "Add
+ * attachments": one click opens the file picker. Used as the input's
+ * `addMenuButton` slot, which hands it `onAddFile` when attachments are on.
+ */
+export function AttachButton({ onAddFile, disabled }: { onAddFile?: () => void; disabled?: boolean }) {
+  if (!onAddFile) return null;
+  return (
+    <button
+      type="button"
+      onClick={onAddFile}
+      disabled={disabled}
+      aria-label="Attach files"
+      title="Attach files: images, PDF, CSV, text, JSON or Excel"
+      className="ml-1 grid size-9 place-items-center rounded-full text-wb-muted transition-colors hover:bg-wb-panel-alt hover:text-wb-text disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="m21.4 11.1-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8" />
+      </svg>
+    </button>
+  );
+}
+
+/** Why a file wasn't attached (wrong type, too large). Clears itself after a few seconds. */
+export function AttachmentNotice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(t);
+  }, [message, onDismiss]);
+  return (
+    <div role="alert" className="wb-rise flex items-center justify-between gap-3 border-b border-wb-border bg-wb-warn/10 px-3 py-2 text-[12px] text-wb-text">
+      <span>{message}</span>
+      <button type="button" onClick={onDismiss} className="shrink-0 rounded px-2 py-0.5 text-[11.5px] text-wb-muted hover:bg-wb-panel">
+        Dismiss
+      </button>
+    </div>
+  );
 }
 
 /** The edit form for a user message, docked under the chat header. */
@@ -200,7 +256,7 @@ export function EditBar({
   onCancel,
   onSubmit,
 }: {
-  editing: { id: string; text: string };
+  editing: Editing;
   onChange: (text: string) => void;
   onCancel: () => void;
   onSubmit: () => void;

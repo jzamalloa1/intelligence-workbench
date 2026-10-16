@@ -70,10 +70,16 @@ export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memo
                       {file.path}
                     </span>
                     <span className="block text-[10.5px] text-wb-faint">
-                      {file.revisions > 1 ? "Edited" : "Written"} by{" "}
-                      {file.bySubagent ? "a researcher" : "the lead agent"}
-                      {file.revisions > 1 ? ` · ${file.revisions} revisions` : ""}
-                      {!file.content ? " · content not captured" : ""}
+                      {file.attached ? (
+                        <>Attached by you{!file.content ? " · kept in the sandbox" : ""}</>
+                      ) : (
+                        <>
+                          {file.revisions > 1 ? "Edited" : "Written"} by{" "}
+                          {file.bySubagent ? "a researcher" : "the lead agent"}
+                          {file.revisions > 1 ? ` · ${file.revisions} revisions` : ""}
+                          {!file.content ? " · content not captured" : ""}
+                        </>
+                      )}
                     </span>
                   </span>
                 </button>

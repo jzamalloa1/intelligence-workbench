@@ -18,6 +18,7 @@ from managed_deepagents import define_deep_agent
 from agent_core.approvals import describe_execute
 from agent_core.models import build_model, describe
 from agent_core.subagents import build_subagents
+from middleware.attachments import AttachmentsMiddleware
 from middleware.errors import FriendlyErrorMiddleware
 from middleware.guards import call_limit
 from middleware.provider_prompt import ProviderPromptMiddleware
@@ -59,14 +60,18 @@ agent = define_deep_agent(
     #      (verified: managed_deepagents has zero references to it, and the
     #      compiled agent's tool list lacked write_todos until this was added).
     #      The Plan Board panel has no data source without it.
-    #   3. Provider prompt   — appends provider steering to the system prompt.
+    #   3. Attachments       — before the first model call, saves files attached
+    #      to the new message into the sandbox and swaps their bytes in state
+    #      for text notes (middleware/attachments.py). Only a before_agent hook,
+    #      so its place among the wrappers below doesn't matter.
+    #   4. Provider prompt   — appends provider steering to the system prompt.
     #      Since deepagents 0.7.23 (MDA 0.9) the SkillsMiddleware it adds runs
     #      *after* all of ours, so the skills list follows this steering block.
-    #   4. Friendly errors   — must sit OUTSIDE the model call it protects, so it
+    #   5. Friendly errors   — must sit OUTSIDE the model call it protects, so it
     #      wraps everything downstream of it and catches provider failures before
     #      they abort the run and surface as a bare "An internal error occurred".
-    #   5. Call limit        — the ceiling on the whole run (before/after hooks).
-    #   6. Provider switch   — innermost of ours: swaps in the conversation's
+    #   6. Call limit        — the ceiling on the whole run (before/after hooks).
+    #   7. Provider switch   — innermost of ours: swaps in the conversation's
     #      provider (x-llm-provider) per call, inside Friendly errors so a
     #      failure on the swapped provider is still caught. deepagents' own tail
     #      (skills, prompt caching, memory, approvals) still runs inside it; its
@@ -74,6 +79,7 @@ agent = define_deep_agent(
     middleware=[
         CopilotKitMiddleware(),
         TodoListMiddleware(),
+        AttachmentsMiddleware(),
         ProviderPromptMiddleware(),
         FriendlyErrorMiddleware(),
         call_limit(),

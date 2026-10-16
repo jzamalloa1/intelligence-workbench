@@ -791,6 +791,41 @@ matching the card's event value (`web/src/lib/interrupt-resume.ts`). The other i
 pending and surface one card at a time. Found when Tavily's plan cap made two researchers fall
 back to `curl` in the sandbox.
 
+**File attachments (2026-10-15).** What each layer does with an attached file, read from the
+installed source and then confirmed by one live run:
+
+- **CopilotChat 1.78** turns on with `attachments={{ enabled, accept, maxSize, onUpload,
+  onUploadFailed }}`. It sends the file as an AG-UI content part (`image` / `document`, with a
+  base64 `data` source) after the typed text. It has no error UI of its own, so a rejected file
+  is silent unless `onUploadFailed` shows something. `maxSize` is checked before `onUpload`, so
+  it has to allow the large photos that `onUpload` downscales.
+- **`@ag-ui/langgraph` 0.0.44 keeps the parts.** `AG-UI 1.0`'s `contentToText` is not on this
+  path. An image becomes an `image_url` data-URL block, with its filename kept in
+  `additional_kwargs["ag-ui"].attachments`, keyed by block index. A document becomes a standard
+  `{type:"file", source_type:"base64", mime_type, metadata.filename}` block.
+- **langchain-anthropic 1.7.6** sends a base64 `file` block as a `document` whose media type is
+  the file's. Anthropic accepts base64 documents only as PDF, so a CSV fails the call.
+- **deepagents' summarization** counts tokens with `count_tokens_approximately`. Image blocks
+  cost a flat 85, but any other block is counted by `len(repr(block))`. A 1 MB PDF left in state
+  therefore reads as about 330K tokens, and the conversation compacts on its first model call.
+- **MDA hands author middleware the run's backend.** `runtime.backend` is injected into every
+  hook we override, the same way it is for tools. MDA's Slack integration uses it to save
+  incoming files under `/workspace/attachments/` in `before_agent`, and that is the pattern
+  `AttachmentsMiddleware` follows.
+
+The rewrite therefore happens once, in state, before the first model call, and the notes are
+plain text so every model and the summarizer accept them. Two limits follow:
+
+- Attached PDFs reach the model as extracted text (pypdf), not as Claude's native PDF input.
+  Charts and scans inside a PDF are lost unless the user attaches them as images.
+- Non-image files are capped at 5 MB. Until the rewrite, the message travels with its base64:
+  in the run request, and in any event that echoes the input. The cap keeps that copy under
+  AG-UI's 10 MB limit per event, since base64 adds a third. Whether the adapter emits a snapshot
+  before the rewrite has not been checked with a large file.
+
+The live test cost one Opus call. It sent a CSV, a PNG and a text PDF through the real route,
+and the model answered correctly from the notes, with all three files in the sandbox.
+
 ---
 
 ## 7. MDA constraints that shape the design
