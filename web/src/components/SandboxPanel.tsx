@@ -15,7 +15,7 @@ import { Panel, Pill, ScopeNote } from "./Panel";
  * next to it.
  *
  * The selected tab lives in WorkbenchUIContext, not local state, so the agent
- * can switch it through the `focus_panel` frontend tool.
+ * can switch it with its `focus_panel` tool.
  */
 export function SandboxPanel({ activity, charts }: { activity: Activity[]; charts: Chart[] }) {
   const { sandboxTab: tab, setSandboxTab: setTab } = useWorkbenchUI();

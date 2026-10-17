@@ -137,6 +137,22 @@ html:root [data-copilotkit] {
   most readable text on screen without shouting.
 */
 /*
+ * Files waiting to be sent, above the input. CopilotKit draws them without a
+ * background (the welcome screen showed through) and wraps long names
+ * letter by letter; give them a surface and one truncated line.
+ */
+html:root [data-testid="copilot-attachment-queue"] > div {
+  background-color: var(--wb-panel-alt);
+  max-width: 280px;
+}
+html:root [data-testid="copilot-attachment-queue"] .cpk\:break-all {
+  word-break: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
  * An attached file's chip in a sent message. The file is in the conversation's
  * sandbox, out of the browser's reach, so the chip is a label, not a link
  * (lib/attachments.ts, SANDBOX_FILE_URL).

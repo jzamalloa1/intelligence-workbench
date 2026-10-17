@@ -151,7 +151,12 @@ class FriendlyErrorMiddleware(AgentMiddleware):
     def _message(exc: Exception) -> AIMessage:
         # Full detail goes to the server log; the chat gets the readable version.
         logger.exception("Model call failed: %s", exc)
-        return AIMessage(content=_explain(exc))
+        # A stop reason marks the message finished. @ag-ui/langgraph opens a text
+        # message for it and only closes one that carries a stop/finish reason;
+        # without it the run ends with the message still open, which AG-UI 1.0
+        # rejects ("Cannot send 'RUN_FINISHED' while text messages are still
+        # active") — the readable error then arrives wrapped in a second one.
+        return AIMessage(content=_explain(exc), response_metadata={"stop_reason": "end_turn"})
 
     def wrap_model_call(
         self,

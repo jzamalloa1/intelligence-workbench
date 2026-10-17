@@ -119,6 +119,14 @@ try {
     { name: "chart.png", mimeType: "image/png", buffer: pngBytes },
   ]);
   await page.waitForTimeout(1500);
+  const queue = page.getByTestId("copilot-attachment-queue");
+  const queueTop = (await queue.boundingBox())?.y ?? 0;
+  const welcomeBottom = await page
+    .getByRole("heading", { name: /What should we research/ })
+    .evaluate((h) => h.closest(".overflow-y-auto")?.getBoundingClientRect().bottom ?? 0);
+  check(welcomeBottom > 0 && welcomeBottom <= queueTop, `queued files sit below the welcome screen, not over it (${Math.round(welcomeBottom)} ≤ ${Math.round(queueTop)})`);
+  const chipBg = await queue.locator(":scope > div").first().evaluate((e) => getComputedStyle(e).backgroundColor);
+  check(chipBg !== "rgba(0, 0, 0, 0)", `queued file chips have a surface (${chipBg})`);
   await page.locator("textarea").first().fill("Which region leads?");
   await page.locator("textarea").first().press("Enter");
   await chat.getByText("North leads (1).").first().waitFor({ timeout: 10000 });

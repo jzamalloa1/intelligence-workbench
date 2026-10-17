@@ -9,6 +9,7 @@
  */
 import { chromium } from "playwright-core";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
@@ -53,9 +54,27 @@ function sse(threadId, runId) {
     error: "one component must have id 'root' — usually a Column",
   });
   call("d1", "render_dashboard", dashboard, { rendered: true, dashboard_id: "ai-code-review-market-at-a-glance", components: 8 });
+  // focus_panel is a backend tool now: the browser acts on the call, no round trip.
+  call("f1", "focus_panel", { panel: "charts" }, "Shown to the user: the charts tab.");
   push({ type: "RUN_FINISHED", threadId, runId });
-  return ev.join("");
+  return ev;
 }
+
+// The stream is served for real, event by event, so tool calls arrive while
+// the run is live — as they do from the agent (focus_panel acts only then).
+const server = http.createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  const body = JSON.parse(raw || "{}");
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  for (const e of sse(body.threadId, body.runId)) {
+    res.write(e);
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  res.end();
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const STUB = `http://127.0.0.1:${server.address().port}/`;
 
 const failures = [];
 const check = (ok, msg) => {
@@ -64,6 +83,8 @@ const check = (ok, msg) => {
 };
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
+let runCount = 0;
+const runsAfterFirst = () => runCount > 1;
 
 async function run(colorScheme) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, colorScheme, deviceScaleFactor: 2 });
@@ -72,7 +93,9 @@ async function run(colorScheme) {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   await page.route("**/api/copilotkit/agent/*/run", async (route) => {
     const body = JSON.parse(route.request().postData() || "{}");
-    await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: sse(body.threadId, body.runId) });
+    runCount += 1;
+    void body;
+    await route.continue({ url: STUB });
   });
   await page.request.post(`${BASE}/api/session`, { data: { userId: "alex" } });
   await page.goto(BASE, { waitUntil: "networkidle" });
@@ -96,6 +119,16 @@ try {
   check((await dash.locator("svg.recharts-surface").count()) > 0, "…as a real plot");
   check(await dash.getByRole("cell", { name: "GitHub" }).isVisible() && await dash.getByRole("cell", { name: "31" }).isVisible(), "the table renders its rows");
   check(await page.getByTestId("dashboard-rejected").getByText("must have id 'root'").isVisible(), "a rejected layout shows as sent back, not as a broken surface");
+  const sandbox = page.locator("section", { has: page.getByRole("heading", { name: "Sandbox" }) });
+  check((await sandbox.getByRole("tab", { name: "Charts" }).getAttribute("aria-selected")) === "true", "a live focus_panel call switches the Sandbox panel to Charts");
+  check(!runsAfterFirst(), "…without the browser starting a follow-up run");
+  await dash.getByRole("button", { name: "Open dashboard full screen" }).click();
+  const full = page.getByRole("dialog", { name: dashboard.title });
+  check(await full.isVisible(), "the dashboard opens full screen");
+  await full.getByTestId("dashboard-metric").first().waitFor({ timeout: 5000 }).catch(() => {});
+  check((await full.getByTestId("dashboard-metric").count()) === 3, "…with its own copy of the layout");
+  await page.keyboard.press("Escape");
+  check(!(await full.isVisible()), "…and Escape closes it");
   await dash.getByRole("button", { name: "Expand chart" }).click();
   check(await page.getByRole("dialog").isVisible(), "the chart opens full screen from the dashboard");
   await page.keyboard.press("Escape");
@@ -104,6 +137,7 @@ try {
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);
   await page.close();
 
+  runCount = 0;
   const dark = await run("dark");
   const [bg, text] = await dark.dash.getByTestId("dashboard-metric").first().evaluate((e) => [getComputedStyle(e).backgroundColor, getComputedStyle(e.querySelector("div:nth-child(2)")).color]);
   check(bg !== "rgb(255, 255, 255)" && text !== "rgb(0, 0, 0)", `dark: tiles take the dark palette (${bg}, ${text})`);
@@ -111,6 +145,7 @@ try {
   await dark.page.close();
 } finally {
   await browser.close();
+  server.close();
 }
 console.log(failures.length ? `\n${failures.length} FAILED` : "\nALL PASS", `— screenshots in ${OUT}`);
 process.exit(failures.length ? 1 : 0);

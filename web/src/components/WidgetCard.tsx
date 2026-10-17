@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
+import { ExpandButton, FullScreenView } from "@/components/FullScreenView";
 
 /**
  * A `render_widget` call: Open Generative UI, a page the agent wrote, run by
@@ -78,10 +79,25 @@ export function WidgetCard({ parameters, status, result }: { parameters: Partial
       </div>
     );
   }
-  return <Widget title={title} html={parameters.html} height={parameters.initial_height} />;
+  return <WidgetFrame title={title} html={parameters.html} height={parameters.initial_height} />;
 }
 
-function Widget({ title, html, height }: { title: string; html: string; height?: number }) {
+/** The card in the chat, with a full-screen view (a second, fresh copy of the widget). */
+function WidgetFrame({ title, html, height }: { title: string; html: string; height?: number }) {
+  const [full, setFull] = useState(false);
+  return (
+    <>
+      <Widget title={title} html={html} height={height} onExpand={() => setFull(true)} />
+      {full ? (
+        <FullScreenView title={title} label="Interactive · sandboxed" onClose={() => setFull(false)}>
+          <Widget title={title} html={html} height={Math.max(height ?? 360, 480)} />
+        </FullScreenView>
+      ) : null}
+    </>
+  );
+}
+
+function Widget({ title, html, height, onExpand }: { title: string; html: string; height?: number; onExpand?: () => void }) {
   const [closed, setClosed] = useState(false);
   const frameBox = useRef<HTMLDivElement>(null);
   const content = useMemo(
@@ -112,12 +128,15 @@ function Widget({ title, html, height }: { title: string; html: string; height?:
   return (
     <section className="my-2 overflow-hidden rounded-xl border border-wb-border bg-wb-panel" aria-label={title} data-testid="widget">
       <header className="flex items-center justify-between gap-2 border-b border-wb-border bg-wb-panel-alt px-3 py-2">
-        <h3 className="text-[13px] font-semibold text-wb-text">{title}</h3>
-        <span
-          className="text-[10.5px] font-medium uppercase tracking-wide text-wb-faint"
-          title="Written by the agent. It runs in a sandbox with no network access and no access to this app."
-        >
-          Interactive · sandboxed
+        <h3 className="min-w-0 truncate text-[13px] font-semibold text-wb-text">{title}</h3>
+        <span className="flex shrink-0 items-center gap-2">
+          <span
+            className="text-[10.5px] font-medium uppercase tracking-wide text-wb-faint"
+            title="Written by the agent. It runs in a sandbox with no network access and no access to this app."
+          >
+            Interactive · sandboxed
+          </span>
+          {onExpand ? <ExpandButton onClick={onExpand} what="widget" /> : null}
         </span>
       </header>
       {closed ? (

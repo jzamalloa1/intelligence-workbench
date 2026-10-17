@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { A2UIProvider, A2UIRenderer, useA2UIActions, useA2UIError } from "@copilotkit/a2ui-renderer";
+import { ExpandButton, FullScreenView } from "@/components/FullScreenView";
 import { DASHBOARD_CATALOG_ID, dashboardCatalog } from "./catalog";
 
 /**
@@ -40,6 +41,7 @@ export function DashboardCard({
 }) {
   const title = parameters.title || "Dashboard";
   const error = status === "complete" ? parseResult(result).error : undefined;
+  const [full, setFull] = useState(false);
 
   if (status !== "complete") {
     return (
@@ -57,15 +59,25 @@ export function DashboardCard({
       </div>
     );
   }
+  const components = (parameters.components ?? []) as Record<string, unknown>[];
   return (
     <section className="my-2 overflow-hidden rounded-xl border border-wb-border bg-wb-panel-alt" aria-label={title} data-testid="dashboard">
       <header className="flex items-center justify-between gap-2 border-b border-wb-border px-3 py-2">
-        <h3 className="text-[13px] font-semibold text-wb-text">{title}</h3>
-        <span className="text-[10.5px] font-medium uppercase tracking-wide text-wb-faint">Dashboard</span>
+        <h3 className="min-w-0 truncate text-[13px] font-semibold text-wb-text">{title}</h3>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-[10.5px] font-medium uppercase tracking-wide text-wb-faint">Dashboard</span>
+          <ExpandButton onClick={() => setFull(true)} what="dashboard" />
+        </span>
       </header>
       <div className="p-3">
-        <Surface surfaceId={`dashboard-${toolCallId}`} components={(parameters.components ?? []) as Record<string, unknown>[]} />
+        <Surface surfaceId={`dashboard-${toolCallId}`} components={components} />
       </div>
+      {full ? (
+        // Its own surface: one A2UI provider per view.
+        <FullScreenView title={title} label="Dashboard" onClose={() => setFull(false)}>
+          <Surface surfaceId={`dashboard-${toolCallId}-full`} components={components} />
+        </FullScreenView>
+      ) : null}
     </section>
   );
 }

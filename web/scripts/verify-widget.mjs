@@ -99,6 +99,14 @@ try {
   check(escaped.includes("/away"), "control: requests from widget frames are captured (the navigation was seen)");
   check(await page.getByTestId("widget-rejected").getByText("keep the widget under").isVisible(), "a rejected widget shows as sent back");
 
+  await widget.getByRole("button", { name: "Open widget full screen" }).click();
+  const full = page.getByRole("dialog", { name: "Price explorer" });
+  check((await full.locator("iframe").count()) === 1, "the widget opens full screen, in its own sandbox");
+  await full.frameLocator("iframe").locator("#r").fill("20");
+  check((await full.frameLocator("iframe").locator("#o").textContent()) === "20", "…and works there");
+  // Focus is inside the widget's frame now, where Escape doesn't reach us.
+  await full.getByRole("button", { name: "Close" }).click();
+  check(!(await full.isVisible()), "…and Close closes it");
   await widget.scrollIntoViewIfNeeded();
   await widget.screenshot({ path: `${OUT}/widget.png` });
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);

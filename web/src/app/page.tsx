@@ -7,7 +7,6 @@ import {
   messageRow,
   useAgent,
   UseAgentUpdate,
-  useFrontendTool,
   useInterrupt,
   useRenderTool,
   type MessageRow,
@@ -33,6 +32,7 @@ import { useRunnerMode } from "@/lib/runner-mode";
 import {
   ChartLibraryContext,
   WorkbenchUIContext,
+  useChartLibrary,
   useWorkbenchUI,
   type PanelView,
   type SandboxTab,
@@ -47,8 +47,8 @@ import { PROVIDERS, type Provider } from "@/lib/users";
 
 /**
  * Holds the UI state the agent is allowed to drive, above everything that
- * reads it — the panels consume it through context, and the `focus_panel`
- * frontend tool writes to it.
+ * reads it — the panels consume it through context, and the agent's
+ * `focus_panel` tool calls write to it.
  */
 export default function Page() {
   // Keyed by conversation: switching threads starts every panel's UI state
@@ -140,11 +140,13 @@ function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
   const wide = useMediaQuery("(min-width: 1536px)");
   const sidebarOpen = sidebarPref ?? wide;
   useApprovals();
-  useFocusPanelTool(charts);
+  useFocusPanel();
   useHistoryRefresh(running);
   useWorkbenchSuggestions({ charts, files, lanes, running });
   const actions = useMessageActions(agent);
   const showWelcome = useSettled(messages.length === 0 && !running, 400);
+  const chatBox = useRef<HTMLDivElement>(null);
+  const inputHeight = useInputHeight(chatBox);
   const { onRegenerate, onEditMessage } = actions;
   const [fileError, setFileError] = useState<string | null>(null);
   const attachments = useMemo(() => attachmentsConfig(setFileError), []);
@@ -196,12 +198,12 @@ function Workbench({ sidebarPref, setSidebarPref }: SidebarPrefProps) {
                 />
               ) : null}
               {fileError ? <AttachmentNotice message={fileError} onDismiss={() => setFileError(null)} /> : null}
-              <div className="relative min-h-0 flex-1">
+              <div ref={chatBox} className="relative min-h-0 flex-1">
                 <CopilotChat agentId="workbench" messageView={messageView} attachments={attachments} input={CHAT_INPUT} />
                 {showWelcome ? (
                   // Centred with margins, not align-items, so a hero taller than
                   // the space scrolls from its top instead of clipping it.
-                  <div className="absolute inset-x-0 top-0 bottom-28 flex overflow-y-auto bg-wb-panel px-6 py-6">
+                  <div className="absolute inset-x-0 top-0 flex overflow-y-auto bg-wb-panel px-6 py-6" style={{ bottom: inputHeight }}>
                     <div className="m-auto">
                       <WelcomeHero onPick={actions.send} />
                     </div>
@@ -327,6 +329,36 @@ const MESSAGE_VIEW = { transformMessages: chatMessages, groupMessages: groupDele
 const CHAT_INPUT = { addMenuButton: AttachButton };
 
 /**
+ * Height of CopilotChat's bottom overlay (attachment queue + input), so the
+ * welcome screen ends above it — attaching files makes it taller.
+ */
+function useInputHeight(box: React.RefObject<HTMLDivElement | null>): number {
+  const [height, setHeight] = useState(112);
+  useEffect(() => {
+    const root = box.current;
+    if (!root) return;
+    let observed: Element | null = null;
+    const resize = new ResizeObserver(([entry]) => setHeight(Math.ceil(entry.contentRect.height) + 8));
+    const attach = () => {
+      const el = root.querySelector('[data-testid="copilot-input-overlay"]');
+      if (el && el !== observed) {
+        if (observed) resize.unobserve(observed);
+        resize.observe(el);
+        observed = el;
+      }
+    };
+    attach();
+    const mutations = new MutationObserver(attach);
+    mutations.observe(root, { childList: true, subtree: true });
+    return () => {
+      mutations.disconnect();
+      resize.disconnect();
+    };
+  }, [box]);
+  return height;
+}
+
+/**
  * `value`, but only once it has held for `ms`. A reopened conversation is empty
  * for a moment while its messages load; without this the welcome screen would
  * flash over it.
@@ -396,58 +428,64 @@ function useApprovals() {
 }
 
 /**
- * A frontend tool: it runs in the browser, not in the agent process, so the
- * agent can move the interface as part of answering rather than describing
- * where to look ("the chart is in the canvas" → it just opens the canvas).
+ * `focus_panel` lets the agent move the interface as part of answering ("the
+ * chart is in the canvas" → it opens the canvas). It is a backend tool the
+ * browser acts on, not a CopilotKit frontend tool: a frontend tool called in
+ * the same turn as backend tools ran only after the run ended, appended its
+ * result after the final answer and started a follow-up run that Claude 5.5
+ * rejects (agent/tools/ui.py has the details).
  */
-function useFocusPanelTool(charts: Chart[]) {
-  const { setSandboxTab, setOpenFilePath, setExpandedChartId, setView } = useWorkbenchUI();
-
-  useFrontendTool({
+function useFocusPanel() {
+  useRenderTool({
     name: "focus_panel",
-    description:
-      "Bring part of the workbench UI to the user's attention: switch the Sandbox " +
-      "panel between its Console and Charts tabs, and/or open a file you have " +
-      "written in the Workspace viewer. Call this when you have just produced " +
-      "something the user should look at. Pass chart_id (the id render_chart " +
-      "returned) to open that chart full screen.",
     parameters: z.object({
-      panel: z
-        .enum(["console", "charts"])
-        .optional()
-        .describe("Which Sandbox tab to show. Use 'charts' right after render_chart."),
-      file_path: z
-        .string()
-        .optional()
-        .describe("Absolute path of a file you wrote, e.g. /reports/summary.md, to open."),
-      chart_id: z
-        .string()
-        .optional()
-        .describe("A chart_id returned by render_chart, to open that chart full screen."),
+      panel: z.enum(["console", "charts"]).nullish(),
+      file_path: z.string().nullish(),
+      chart_id: z.string().nullish(),
     }),
-    handler: async ({ panel, file_path, chart_id }) => {
-      if (panel) setSandboxTab(panel);
-      if (file_path) setOpenFilePath(file_path);
-      // On a narrow screen the panel may be hidden behind the view switch.
-      if (panel || file_path) setView("workspace");
-      let chartNote: string | undefined;
-      if (chart_id) {
-        const slug = chartSlug(chart_id);
-        const chart = [...charts].reverse().find((c) => c.chartId === slug);
-        if (chart) {
-          setExpandedChartId(chart.id);
-          chartNote = `opened chart ${slug} full screen`;
-        } else {
-          chartNote = `no chart with id ${slug} in this conversation`;
-        }
-      }
-      // The return value goes back to the model as the tool result.
-      const did = [panel && `showed the ${panel} tab`, file_path && `opened ${file_path}`, chartNote]
-        .filter(Boolean)
-        .join(" and ");
-      return did ? `Done — ${did}.` : "Nothing to focus; pass panel, file_path or chart_id.";
-    },
+    render: (p) => <FocusPanelCall toolCallId={p.toolCallId} args={p.parameters} status={p.status} result={p.result} />,
   });
+}
+
+/** Tool calls already acted on (or seen in a reopened conversation and skipped). */
+const focusedCalls = new Set<string>();
+
+function FocusPanelCall({
+  toolCallId,
+  args,
+  status,
+  result,
+}: {
+  toolCallId: string;
+  args: { panel?: "console" | "charts" | null; file_path?: string | null; chart_id?: string | null };
+  status: string;
+  result?: unknown;
+}) {
+  const { agent } = useAgent({ agentId: "workbench", updates: [UseAgentUpdate.OnRunStatusChanged] });
+  const charts = useChartLibrary();
+  const { setSandboxTab, setOpenFilePath, setExpandedChartId, setView } = useWorkbenchUI();
+  // Live if this card saw the call stream in, or a run is going: a call replayed
+  // from history arrives complete, with nothing running, and is shown, not acted on.
+  const sawStreaming = useRef(status !== "complete");
+  const live = sawStreaming.current || (agent?.isRunning ?? false);
+
+  useEffect(() => {
+    if (status === "inProgress" || focusedCalls.has(toolCallId)) return;
+    focusedCalls.add(toolCallId);
+    if (!live) return;
+    const { panel, file_path, chart_id } = args;
+    if (panel) setSandboxTab(panel);
+    if (file_path) setOpenFilePath(file_path);
+    // On a narrow screen the panel may be hidden behind the view switch.
+    if (panel || file_path) setView("workspace");
+    if (chart_id) {
+      const slug = chartSlug(chart_id);
+      const chart = [...charts].reverse().find((c) => c.chartId === slug);
+      if (chart) setExpandedChartId(chart.id);
+    }
+  }, [status, toolCallId, live, args, charts, setSandboxTab, setOpenFilePath, setExpandedChartId, setView]);
+
+  return <ToolCard name="focus_panel" args={args} status={status} result={result} />;
 }
 
 function Header({

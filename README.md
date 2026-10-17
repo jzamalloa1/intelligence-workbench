@@ -166,7 +166,8 @@ ever removed the shell would come back gated, not open.
 ### Attached files
 
 The paperclip in the chat input attaches images, PDFs, CSV/TSV, text, Markdown, JSON or Excel
-(5 MB each; images are downscaled in the browser to Claude's 2576 px limit). They travel as AG-UI
+(5 MB each; images are downscaled in the browser to Claude's 2576 px limit). Files waiting to be
+sent sit above the input, and the welcome screen makes room for them. They travel as AG-UI
 content parts, and `@ag-ui/langgraph` turns them into LangChain blocks: an `image_url` for an
 image, a base64 `file` block for anything else.
 
@@ -203,6 +204,9 @@ props, dangling or cyclic children, oversized tables.
 
 The browser draws it with CopilotKit's A2UI renderer (`@copilotkit/a2ui-renderer`) and our catalog
 (`web/src/components/dashboard/catalog.tsx`), styled with the workbench's tokens, in light and dark.
+It sits in the chat as part of the answer, and its expand button opens it full screen
+(`FullScreenView`), where the chat's narrow column doesn't constrain it. Widgets have the same
+button.
 
 Why a tool of our own, not CopilotRuntime's `a2ui` option: that middleware injects a frontend tool
 and paints from an activity stream, which the history store doesn't keep. A tool call is kept, so
@@ -324,11 +328,20 @@ request whether to think, so many quick replies have no card. The summaries are 
 the real, signed thinking blocks. Verified live (a reasoning summary streamed before the answer)
 and with `web/scripts/verify-reasoning.mjs` (zero API cost).
 
-**You let the agent move the UI.** `useFrontendTool({name: "focus_panel", …})` registers a tool
-that executes *in the browser*, not in the agent process, so the agent can switch the Sandbox
-panel to Charts after rendering one, or open a file it just wrote — instead of describing where
-to look. The panels read that state from `WorkbenchUIContext` rather than local state, which is
-the whole reason it was lifted out of them.
+**You let the agent move the UI.** With `focus_panel` (`tools/ui.py`), the agent can switch the
+Sandbox panel to Charts after rendering one, or open a file it just wrote, instead of describing
+where to look. It is a backend tool that returns at once. The browser acts on the call
+(`useFocusPanel` in `page.tsx`), but only while the run is live, so reopening a conversation
+doesn't move the panels. The panels read that state from `WorkbenchUIContext` rather than local
+state, which is why it was lifted out of them.
+
+It started as a CopilotKit frontend tool (`useFrontendTool`), which runs in the browser. That
+broke when the model called it in the same turn as backend tools:
+
+1. The agent carried on without its result.
+2. The browser ran it only after the run ended, and appended the result after the final answer.
+3. The browser then started a follow-up run. That conversation ended on an assistant message,
+   which Claude 5.5 rejects ("does not support assistant message prefill").
 
 ### Who sees what — the sandbox/frontend visibility boundary
 
@@ -581,6 +594,8 @@ thread.
 | `memory.py` | Declares the deployment-shared `/memories/agent/` tree — see the trust-boundary warning in the file itself |
 | `identity.py` | Declares LangSmith-API-key auth for the deployment |
 | `sandbox/__init__.py` | Declares the per-thread Linux VM that makes `execute` real |
+| `sandbox/setup.sh` | Baked into the sandbox snapshot when `mda dev` / `mda deploy` starts: Python with pandas, numpy and openpyxl, so the lead doesn't spend approvals on `pip install`. Restart `mda dev` after changing it |
+| `tools/ui.py` | `focus_panel` — the agent opens a file, a Sandbox tab or a chart for the user |
 | `web/src/app/api/copilotkit/[[...slug]]/route.ts` | Sign-in and ownership checks, then Cloud/local runner dispatch on the `x-runner` header |
 | `web/src/lib/workbench.ts` | Pure derivation of Plan Board / Workspace / Activity / Charts data from agent state and messages |
 | `web/src/components/SandboxPanel.tsx` | Tabbed Console (`execute` output) + Artifact Canvas (chart gallery) |
@@ -591,7 +606,7 @@ thread.
 | `web/src/lib/usage-tracker.ts`, `web/src/lib/pricing.ts` | Context and Cost meters: per-call usage from each model call's own report, carried in agent state as `workbenchUsage`; verified prices applied in the browser |
 | `web/src/lib/subagent-tracker.ts` | Keeps subagent tool calls through message snapshots (outbound) and out of the lead's thread (inbound), tags each with its `task` call — see "How subagent work is kept" |
 | `web/src/lib/lanes.ts`, `web/src/components/ResearchLanes.tsx` | Research lanes: derived from the tagged messages; rendered for `task` calls, grouped with `messageView.groupMessages` |
-| `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), for the `focus_panel` frontend tool |
+| `web/src/lib/workbench-ui.ts` | UI state the agent may drive (sandbox tab, open file, expanded chart), through `focus_panel` calls |
 | `web/src/lib/users.ts`, `web/src/components/SessionGate.tsx` | Demo sign-in; owns the open conversation id (`?t=` in the URL) and hands it to `<CopilotKit threadId>` |
 | `web/src/lib/server/history-runner.ts`, `history-store.ts` | Per-user history: registers and snapshots conversations, restores them on reopen |
 | `web/src/components/HistorySidebar.tsx` | The conversation list — grouped by date, rename, delete |
@@ -658,11 +673,10 @@ sequenceDiagram
 
 | Name a skill can use | Where the lead gets it |
 |---|---|
-| `research`, `render_chart`, `render_dashboard`, `render_widget` | Our tools, `agent.py` |
+| `research`, `render_chart`, `render_dashboard`, `render_widget`, `focus_panel` | Our tools, `agent.py`. `focus_panel` is acted on by the browser (see "You let the agent move the UI") |
 | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute` | deepagents' filesystem middleware. `execute` runs shell commands in the thread's sandbox VM (`sandbox/`) and is gated by the approval card. Researchers get the same set minus `execute` |
 | `task` | deepagents' subagent middleware — delegation to `researcher` |
 | `write_todos` | `TodoListMiddleware`, added in `agent.py` |
-| `focus_panel` | Frontend tool from the web app (CopilotKit) |
 
 ---
 
@@ -692,8 +706,8 @@ sequenceDiagram
 
 **CopilotKit**
 
-`CopilotChat` · `useRenderToolCall` generative UI · `useFrontendTool` (the agent drives the app —
-opens files, switches panels) · `useHumanInTheLoop` · shared state via `useAgent` ·
+`CopilotChat` · `useRenderTool` generative UI (charts, A2UI dashboards, Open Generative UI widgets,
+and the agent driving the app: opening files, switching panels) · attachments · `useHumanInTheLoop` · shared state via `useAgent` ·
 threads drawer · suggestions · Inspector.
 
 **Provider-agnostic.** The same agent runs on Anthropic or OpenAI, switched by one env var, with

@@ -892,6 +892,29 @@ The live test took two Opus calls. Asked for a compound-interest calculator, the
 widget that used the colour tokens and computed correctly. When reopened, it ran with zero outside
 requests.
 
+**Frontend tools and Claude 5.5 (2026-10-16).** These turned up in the first full run with the
+sample files, as two errors in one incident.
+
+- **What happened.** The lead called `render_widget` and `focus_panel` (then a CopilotKit frontend
+  tool) in one message. The Python `CopilotKitMiddleware` let the backend half run and the agent
+  carried on. The model's own reasoning noted "that focus_panel call wasn't actually a tool I
+  have". After the run, the browser executed `focus_panel`, appended its result after the final
+  answer, and started a follow-up run. With no matching tool call, that conversation ended on an
+  assistant message. Earlier Claude models treated a trailing assistant message as a prefill and
+  continued from it. The 5.5 models return a 400: "This model does not support assistant message
+  prefill". The fix is that `focus_panel` is now a backend tool the browser acts on (`tools/ui.py`).
+  Nothing is left in a frontend tool.
+- **Then the error path broke.** `FriendlyErrorMiddleware` turned the 400 into a readable message,
+  but the run still failed with AG-UI's INCOMPLETE_STREAM. `@ag-ui/langgraph` opens a text message
+  for a new `AIMessage` and closes it only when the message carries a stop or finish reason. A
+  real model reply always has one; our hand-built message did not. It now sets
+  `response_metadata={"stop_reason": "end_turn"}`. This is reproducible for free: a run whose
+  input ends with an assistant message is rejected, and rejected requests aren't billed.
+- **Sandbox packages.** The sandbox image has Python but not pandas, so the lead spent four
+  approved commands on `pip install --break-system-packages`. `sandbox/setup.sh` now installs
+  pandas, numpy and openpyxl, and `mda dev` bakes it into a snapshot at startup. The lead's
+  instructions also ask for one script run once, since every `execute` waits for approval.
+
 ---
 
 ## 7. MDA constraints that shape the design

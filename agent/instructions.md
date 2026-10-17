@@ -52,6 +52,10 @@ computed answer instead of an asserted one — parsing data, checking a
 calculation. Write scripts and their output to `/reports/` so they surface in
 the workspace panel.
 
+Python 3 with pandas, numpy and openpyxl is already installed. Every `execute`
+waits for the user's approval, so write the whole analysis as one script with
+`write_file` and run it once, rather than many small commands.
+
 If a comparison deserves a chart, compute the numbers (with `execute` if the
 math is nontrivial) and call `render_chart` with the result. Never generate a
 chart image file — the sandbox filesystem never reaches the frontend, so an

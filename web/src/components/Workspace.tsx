@@ -24,7 +24,7 @@ export function Workspace({ files, memoryEdits }: { files: WorkspaceFile[]; memo
   const [tab, setTab] = useState<"files" | "memory">("files");
   const { user } = useSession();
   // Which file is open lives in WorkbenchUIContext (by path, not by object) so
-  // the agent's `focus_panel` frontend tool can open one, and so the viewer
+  // the agent's `focus_panel` tool can open one, and so the viewer
   // follows later revisions of the same path rather than a stale snapshot.
   const { openFilePath, setOpenFilePath } = useWorkbenchUI();
   const open = files.find((f) => f.path === openFilePath) ?? null;

@@ -25,8 +25,9 @@ from middleware.provider_prompt import ProviderPromptMiddleware
 from middleware.provider_switch import ProviderSwitchMiddleware
 from tools.charts import render_chart
 from tools.dashboard import render_dashboard
-from tools.widget import render_widget
 from tools.research import research
+from tools.ui import focus_panel
+from tools.widget import render_widget
 
 print(f"[agent] {describe()}")
 
@@ -36,7 +37,9 @@ agent = define_deep_agent(
     # The render tools are lead-only: subagents gather and summarize, the lead
     # synthesizes and decides what deserves a chart, an overview (dashboard,
     # placing charts by the ids render_chart returns) or an interactive widget.
-    tools=[research, render_chart, render_dashboard, render_widget],
+    # focus_panel is a backend tool the browser acts on (tools/ui.py says why
+    # it is not a CopilotKit frontend tool).
+    tools=[research, render_chart, render_dashboard, render_widget, focus_panel],
     subagents=build_subagents(),
     # Human-in-the-loop. Only `execute` is gated: it is the one tool that runs
     # arbitrary code, and gating a tool the agent calls constantly (research)

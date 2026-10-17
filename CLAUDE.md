@@ -137,7 +137,8 @@ deploy time.
 - Agent memory is deployment-shared. Never store personal data or credentials
   there, and treat its contents as untrusted input.
 - Restart `mda dev` after adding `memory.py`, `identity.py`, `skills/`, `schedules/`, `channels/` — they're
-  discovered at compile time, not hot-reloaded.
+  discovered at compile time, not hot-reloaded. Same for `sandbox/setup.sh`, which is baked into the
+  sandbox snapshot at startup; conversations whose sandbox already exists keep the old one.
 - Model IDs need the provider prefix (`anthropic:claude-opus-5-5`). Python uses `google_genai:`,
   TS uses `google-genai:`, Gateway uses `provider/model`.
 
@@ -237,6 +238,14 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   which must keep refusing non-public addresses.
 - **Files are not in agent state when a sandbox is attached.** Derive the Workspace panel from
   `write_file` / `edit_file` tool calls, not from state. `todos` *is* in state.
+- **No CopilotKit frontend tools for the agent.** A `useFrontendTool` call made in the same turn as
+  backend tools runs after the run ends and starts a follow-up run that Claude 5.5 rejects (prefill
+  400). Anything the agent does to the UI is a backend tool the browser acts on, like
+  `focus_panel` (`tools/ui.py`, `useFocusPanel` in `page.tsx`).
+- **An `AIMessage` built by hand needs `response_metadata={"stop_reason": …}`.** `@ag-ui/langgraph`
+  opens a text message for it and closes it only on a stop or finish reason. Without one the run
+  ends with "Cannot send 'RUN_FINISHED' while text messages are still active" (see
+  `FriendlyErrorMiddleware._message`).
 - **Dashboards are a tool call, not an A2UI stream.** `render_dashboard`'s arguments are the A2UI
   component list, drawn from the tool call so they survive reopening (ARCHITECTURE §6). Its
   `CATALOG` (`agent/tools/dashboard.py`) and `web/src/components/dashboard/catalog.tsx` must list

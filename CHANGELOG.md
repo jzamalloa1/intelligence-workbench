@@ -17,6 +17,15 @@
   script-only sandboxed iframe, a Content-Security-Policy blocks all network access, and a widget
   that navigates away is closed. Used only when asked. New check: `verify-widget.mjs`.
 - Line charts no longer clip their first and last axis labels.
+- Dashboards and widgets open full screen from their card.
+- The sandbox comes with pandas, numpy and openpyxl (`sandbox/setup.sh`), and the lead runs its
+  analysis as one script, not many commands that each need approval.
+- Fixed: an agent turn that opened a panel alongside other tools started a broken follow-up run
+  ("does not support assistant message prefill"). `focus_panel` is now a backend tool the
+  browser acts on.
+- Fixed: a provider error shown in the chat also failed the run with "text messages are still
+  active".
+- Fixed: files waiting to be sent overlapped the welcome screen and had no background.
 
 ## v0.1.0 — 2026-10-15
 
