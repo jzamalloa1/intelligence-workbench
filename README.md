@@ -188,6 +188,10 @@ The notes are plain text, so the message works for either provider and for the s
 model. The web app shows them as file chips (`web/src/lib/attachments.ts`) and lists the files
 in the Workspace panel as "Attached by you". Regenerate and Edit keep a message's files.
 
+To try it, [`samples/`](samples/) has a fictional business case to attach: a sales CSV, a board
+memo PDF and a shelf-price photo. It comes with a test query that uses every feature, and an answer
+key for checking the agent's numbers.
+
 ### Dashboards
 
 `render_dashboard` (`tools/dashboard.py`) lets the lead lay out an overview: a flat
