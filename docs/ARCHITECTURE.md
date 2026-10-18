@@ -915,6 +915,28 @@ sample files, as two errors in one incident.
   pandas, numpy and openpyxl, and `mda dev` bakes it into a snapshot at startup. The lead's
   instructions also ask for one script run once, since every `execute` waits for approval.
 
+**Sandbox lifetime, same-turn races, and the context budget (2026-10-17).** A follow-up asked
+8 hours after a run raised three questions.
+
+- **Sandbox lifetime.** `idle_ttl_seconds=600` *stops* a sandbox; it doesn't delete it. The disk
+  survives and the sandbox starts again on the next command. Deletion comes
+  `delete_after_stop_seconds` later, which the server sets to 14 days (1,209,600 s) on every sandbox
+  here. The 8-hour-old attachment was read without trouble. If a sandbox were gone, the
+  conversation, including every `write_file`'s content, would still be in the thread, and the Workspace
+  panel reads files from there. Only commands that need the files on disk would fail.
+- **Same-turn races.** Both "No such file or directory" failures that conversation hit were a
+  `write_file` and an `execute` sent in one turn. ToolNode runs a turn's calls concurrently, so the
+  command started before the upload finished, and an approved retry with `sleep 2` worked. Fixed
+  in code rather than in the prompt: `WriteBeforeExecuteMiddleware` (`middleware/ordering.py`) makes
+  an `execute` wait for its turn's unanswered writes, at most 60 s. It's tested offline for
+  concurrency, already-answered writes, a failed write and the sync path.
+- **The context budget.** deepagents' `SummarizationMiddleware` resolves its 85% trigger against
+  `model.profile["max_input_tokens"]` (`_get_profile_limits`). That is 1M for Claude 5.5, so it
+  would fire at about 850K. Over two questions the lead's prompt grew from 15K to 61K tokens per
+  call. `build_model` now declares `min(window, 200K)`, keeping the rest of the profile, so it fires
+  at about 170K. That applies to every tier and provider, including the models
+  `ProviderSwitchMiddleware` swaps in, which come from the same builder.
+
 ---
 
 ## 7. MDA constraints that shape the design

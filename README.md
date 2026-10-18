@@ -130,10 +130,11 @@ Every model call above — lead **and** subagents — passes through the same mi
 | 1 | `CopilotKitMiddleware()` | Installs shared state + frontend-tool bridge | Must see the request before anything else touches it |
 | 2 | `TodoListMiddleware()` | Contributes `write_todos` and the `todos` state field | Not provided by MDA or deepagents' default profile — verified by reading both; without it the Plan Board has no data source |
 | 3 | `AttachmentsMiddleware()` | Before the first model call, saves files attached to the new message into the sandbox and replaces their bytes in state with `<attachment>` notes (images keep theirs) — see § Attached files | A `before_agent` hook only, so it wraps no model call; anywhere before the first call works. Lead only — researchers never receive the user's message |
-| 4 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
-| 5 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider. A safety-classifier decline (`stop_reason: "refusal"`) is replaced the same way, partial tool calls dropped | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
-| 6 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
-| 7 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
+| 4 | `WriteBeforeExecuteMiddleware()` | An `execute` waits for the `write_file` / `edit_file` calls sent in its own turn (`middleware/ordering.py`). Calls in one turn run at the same time, so "write a script and run it" could fail with "No such file", costing another approval for each retry | Tool-call hooks only, so its place among the model-call wrappers doesn't matter. Lead only, since only the lead has `execute` |
+| 5 | `ProviderPromptMiddleware()` | Appends the run's provider's prompt delta (`agent_core/prompts.py`) | After the CopilotKit and todo layers. Since MDA 0.9 (deepagents 0.7.23) the skills list is appended *after* it — deepagents' own middleware runs inside ours (row below). Subagents don't inherit it — the researcher's spec lists it too |
+| 6 | `FriendlyErrorMiddleware()` | Catches provider failures — including errors that arrive mid-stream as the SDK's own `APIError` — and returns a readable `AIMessage` naming the run's provider. A safety-classifier decline (`stop_reason: "refusal"`) is replaced the same way, partial tool calls dropped | Must wrap everything downstream of it — sits closer to the actual model call than the guards outside it |
+| 7 | `call_limit()` (`ModelCallLimitMiddleware`) | Hard ceiling on total model calls for the run | The last line of defense regardless of what happened above |
+| 8 | `ProviderSwitchMiddleware("lead")` | Swaps in the conversation's provider (`x-llm-provider`) per model call; strips Anthropic prompt-cache marks when switching away | Innermost of ours, so Friendly errors still wraps a failure on the swapped provider. deepagents' tail (skills, prompt caching, memory, approvals) runs inside it; the cache marks no-op on a swapped-in OpenAI model. The researcher has its own instance (`"worker"`, non-streaming) |
 
 ### The subagent math
 
@@ -233,6 +234,26 @@ it with CopilotKit's Open Generative UI renderer inside a `@jetbrains/websandbox
 The widget gets the workbench's colour tokens as CSS variables, so it matches light and dark. It
 is drawn from the tool call, so it comes back when the conversation is reopened. A widget costs a
 page of output tokens, so the lead uses one only when asked.
+
+### Context budget
+
+Every model call re-sends the whole conversation. deepagents keeps that in bounds in three ways:
+
+- Tool results over 20K tokens are moved to `/large_tool_results/`.
+- The content of old `write_file` / `edit_file` calls is trimmed.
+- Older messages are summarized, keeping the most recent 10%.
+
+The last two start at 85% of the model's declared window. For Claude 5.5 that window is 1M tokens,
+so they would start at about 850K, which no conversation here reaches.
+
+`agent_core/models.py` therefore declares a **200K-token budget** (`CONTEXT_BUDGET`), and compaction
+starts at about 170K. The models still accept their full window; only the trigger moves. The trade-off
+is that a long conversation's early detail survives as a summary, though files the agent wrote stay
+in the sandbox and can be re-read. The Context meter shows the lead against that budget and counts
+compactions.
+
+Caching doesn't shrink the history, only its price: repeated input is billed at a tenth. The cache
+lasts 5 minutes, so the first call of a follow-up hours later pays to cache the whole history again.
 
 ### Why subagents don't stream token-by-token
 
@@ -575,7 +596,8 @@ thread.
 | File | Role |
 |---|---|
 | `agent.py` | Assembles model, tools, subagents, and middleware order. The only place that matters for *sequencing* |
-| `agent_core/models.py` | Model selection by role (`lead`/`worker`/`cheap`) and provider — the only place model IDs appear. `run_provider()` reads the conversation's provider from the run's forwarded headers |
+| `middleware/ordering.py` | `WriteBeforeExecuteMiddleware`: a command waits for the file writes sent in its own turn |
+| `agent_core/models.py` | Model selection by role (`lead`/`worker`/`cheap`) and provider — the only place model IDs appear. Also the 200K context budget that sets when deepagents summarizes (§ Context budget). `run_provider()` reads the conversation's provider from the run's forwarded headers |
 | `middleware/provider_switch.py` | Per-call model swap to the conversation's provider — see § Provider toggle |
 | `agent_core/prompts.py` | `RESEARCHER` subagent prompt; per-provider `PROVIDER_DELTA` |
 | `agent_core/subagents.py` | Subagent roster — currently one: `researcher` |
@@ -699,7 +721,7 @@ sequenceDiagram
 | A2UI dashboards (`render_dashboard`) | An overview card in the chat — headline metrics, charts placed by id, a small table — laid out by the agent in A2UI and drawn by CopilotKit's A2UI renderer with the workbench's own components |
 | Open Generative UI (`render_widget`) | Interactive widgets in the chat — a calculator, sliders, a what-if — written by the agent as HTML and run in a sandboxed iframe with no network access |
 | Human-in-the-loop (`interrupt_on`) | Approval Card — approve / edit / reject inline |
-| Summarization + context offload | Context Meter (header) — the lead's current context against its model's window, per-call growth chart, compactions counted |
+| Summarization + context offload | Context Meter (header) — the lead's current context against the 200K context budget (summarization starts at 170K; see § Context budget), per-call growth chart, compactions counted |
 | Per-call token usage | Cost Meter (header) — estimated spend for the conversation, split by model and lead vs subagents, cache reads/writes priced at their own rates |
 | Durable memory (`AGENTS.md`) | Memory tab (Workspace panel) — what is stored, what this conversation changed, and that it is shared |
 | Managed schedules (cron) | Daily Brief card |

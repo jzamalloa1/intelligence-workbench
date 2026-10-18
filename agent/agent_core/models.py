@@ -138,6 +138,25 @@ _THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
 _BLOCK_BINDING = {"prefix_mismatch_behavior": "drop_block"}
 
 
+#: The context a conversation may grow to before deepagents summarizes it.
+#: deepagents' SummarizationMiddleware compacts at 85% of the model profile's
+#: `max_input_tokens`; with the 1M-token windows of Claude 5.5 that is ~850K
+#: tokens, which no conversation here reaches — while every call re-sends the
+#: whole history (a 5-hour-old follow-up re-caches all of it at full price).
+#: Declaring a smaller window moves the trigger to ~170K. Mirrored by
+#: CONTEXT_BUDGET in web/src/lib/pricing.ts for the Context meter.
+CONTEXT_BUDGET = 200_000
+
+
+def _budgeted(model: BaseChatModel) -> BaseChatModel:
+    """The model, declaring at most CONTEXT_BUDGET input tokens in its profile."""
+    profile = dict(model.profile or {})
+    window = profile.get("max_input_tokens")
+    profile["max_input_tokens"] = min(window, CONTEXT_BUDGET) if isinstance(window, int) else CONTEXT_BUDGET
+    model.profile = profile
+    return model
+
+
 def build_model(role: Role, *, stream: bool = True, provider: Provider | None = None) -> BaseChatModel:
     """Return a configured chat model for ``role`` on the active provider.
 
@@ -159,12 +178,14 @@ def build_model(role: Role, *, stream: bool = True, provider: Provider | None = 
         thinking: dict = {"type": "adaptive", "block_binding": _BLOCK_BINDING}
         if tier.show_reasoning and stream:
             thinking["display"] = "summarized"
-        return ChatAnthropic(
-            model=tier.model,
-            disable_streaming=not stream,
-            effort=tier.effort,
-            thinking=thinking,
-            betas=[_THINKING_BINDING_BETA],
+        return _budgeted(
+            ChatAnthropic(
+                model=tier.model,
+                disable_streaming=not stream,
+                effort=tier.effort,
+                thinking=thinking,
+                betas=[_THINKING_BINDING_BETA],
+            )
         )
 
     # OpenAI: GPT-5.6 guidance is to use the Responses API for reasoning,
@@ -178,7 +199,7 @@ def build_model(role: Role, *, stream: bool = True, provider: Provider | None = 
         kwargs["reasoning"] = {"effort": tier.effort}
         if tier.show_reasoning and stream:
             kwargs["reasoning"]["summary"] = "auto"
-    return ChatOpenAI(**kwargs)
+    return _budgeted(ChatOpenAI(**kwargs))
 
 
 @lru_cache(maxsize=None)

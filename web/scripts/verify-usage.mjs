@@ -88,7 +88,7 @@ await pop.waitFor();
 check(await pop.getByText("4 model calls").isVisible(), "breakdown counts 4 calls");
 check(await pop.getByRole("cell", { name: /Claude Opus 5\.5\s*lead/ }).isVisible(), "lead row");
 check(await pop.getByRole("cell", { name: /Claude Sonnet 5\.5\s*subagents/ }).isVisible(), "subagent row");
-check(await pop.getByText("% of 1M").isVisible(), "context shown against the model's 1M window");
+check(await pop.getByText(/% of the 200K budget · summarizes at 170K/).isVisible(), "context shown against the 200K budget, with where summarization starts");
 await page.screenshot({ path: `${OUT}/usage.png` });
 
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);

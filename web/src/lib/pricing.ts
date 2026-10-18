@@ -83,6 +83,18 @@ export interface UsageSummary {
   leadModel?: string;
 }
 
+/**
+ * The context a conversation may grow to before the agent summarizes it — the
+ * window `agent_core/models.py` declares (CONTEXT_BUDGET there), not the model's
+ * full 1M. deepagents compacts at SUMMARIZE_AT of it.
+ */
+export const CONTEXT_BUDGET = 200_000;
+export const SUMMARIZE_AT = 0.85;
+
+function budgeted(window: number | undefined): number {
+  return window ? Math.min(window, CONTEXT_BUDGET) : CONTEXT_BUDGET;
+}
+
 export function summarize(records: UsageRecord[]): UsageSummary {
   const groups = new Map<string, UsageSummary["byModel"][number]>();
   let cost = 0;
@@ -118,7 +130,7 @@ export function summarize(records: UsageRecord[]): UsageSummary {
     byModel: [...groups.values()].sort((a, b) => b.cost - a.cost),
     leadContext: lead.map((r) => r.input),
     currentContext: last ? last.input + last.output : 0,
-    contextWindow: last ? modelInfo(last.model)?.contextWindow : undefined,
+    contextWindow: last ? budgeted(modelInfo(last.model)?.contextWindow) : undefined,
     leadModel: last?.model,
   };
 }

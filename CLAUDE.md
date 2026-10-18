@@ -246,6 +246,12 @@ Keep `agent.py` thin: it imports from `agent_core/` and passes things to `define
   opens a text message for it and closes it only on a stop or finish reason. Without one the run
   ends with "Cannot send 'RUN_FINISHED' while text messages are still active" (see
   `FriendlyErrorMiddleware._message`).
+- **The context budget is declared, not real.** `build_model` caps each model profile's
+  `max_input_tokens` at `CONTEXT_BUDGET` (200K) so deepagents summarizes at about 170K instead of
+  850K. Keep it on every tier and provider, and change `CONTEXT_BUDGET` in `web/src/lib/pricing.ts`
+  with it.
+- **Writes finish before same-turn commands.** `WriteBeforeExecuteMiddleware` holds an `execute`
+  until the `write_file`/`edit_file` calls of its own turn finish; keep it in the lead's stack.
 - **Dashboards are a tool call, not an A2UI stream.** `render_dashboard`'s arguments are the A2UI
   component list, drawn from the tool call so they survive reopening (ARCHITECTURE §6). Its
   `CATALOG` (`agent/tools/dashboard.py`) and `web/src/components/dashboard/catalog.tsx` must list

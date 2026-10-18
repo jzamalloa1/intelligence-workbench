@@ -26,6 +26,10 @@
 - Fixed: a provider error shown in the chat also failed the run with "text messages are still
   active".
 - Fixed: files waiting to be sent overlapped the welcome screen and had no background.
+- Fixed: writing a script and running it in the same turn could fail with "No such file" (the two
+  calls ran at the same time). Commands now wait for that turn's file writes.
+- Long conversations are summarized from about 170K tokens instead of about 850K (a declared 200K
+  context budget), and the Context meter shows the budget and where summarization starts.
 
 ## v0.1.0 — 2026-10-15
 

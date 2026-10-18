@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { UsageSummary } from "@/lib/pricing";
+import { SUMMARIZE_AT, type UsageSummary } from "@/lib/pricing";
 
 const tokens = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 });
 
@@ -96,7 +96,7 @@ function UsagePopover({ summary, share }: { summary: UsageSummary; share?: numbe
           </p>
           <p className="mt-1 text-[11px] text-wb-faint">
             {share !== undefined && summary.contextWindow
-              ? `${(share * 100).toFixed(share < 0.1 ? 1 : 0)}% of ${tokens.format(summary.contextWindow)}`
+              ? `${(share * 100).toFixed(share < 0.1 ? 1 : 0)}% of the ${tokens.format(summary.contextWindow)} budget · summarizes at ${tokens.format(summary.contextWindow * SUMMARIZE_AT)}`
               : "window not published"}
             {compactions ? ` · compacted ${compactions}×` : ""}
           </p>

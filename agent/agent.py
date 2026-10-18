@@ -21,6 +21,7 @@ from agent_core.subagents import build_subagents
 from middleware.attachments import AttachmentsMiddleware
 from middleware.errors import FriendlyErrorMiddleware
 from middleware.guards import call_limit
+from middleware.ordering import WriteBeforeExecuteMiddleware
 from middleware.provider_prompt import ProviderPromptMiddleware
 from middleware.provider_switch import ProviderSwitchMiddleware
 from tools.charts import render_chart
@@ -70,14 +71,17 @@ agent = define_deep_agent(
     #      to the new message into the sandbox and swaps their bytes in state
     #      for text notes (middleware/attachments.py). Only a before_agent hook,
     #      so its place among the wrappers below doesn't matter.
-    #   4. Provider prompt   — appends provider steering to the system prompt.
+    #   4. Write before run  — an `execute` waits for the write_file/edit_file
+    #      calls of its own turn, which otherwise run at the same time and can
+    #      lose the race ("No such file"). Tool-call hooks only.
+    #   5. Provider prompt   — appends provider steering to the system prompt.
     #      Since deepagents 0.7.23 (MDA 0.9) the SkillsMiddleware it adds runs
     #      *after* all of ours, so the skills list follows this steering block.
-    #   5. Friendly errors   — must sit OUTSIDE the model call it protects, so it
+    #   6. Friendly errors   — must sit OUTSIDE the model call it protects, so it
     #      wraps everything downstream of it and catches provider failures before
     #      they abort the run and surface as a bare "An internal error occurred".
-    #   6. Call limit        — the ceiling on the whole run (before/after hooks).
-    #   7. Provider switch   — innermost of ours: swaps in the conversation's
+    #   7. Call limit        — the ceiling on the whole run (before/after hooks).
+    #   8. Provider switch   — innermost of ours: swaps in the conversation's
     #      provider (x-llm-provider) per call, inside Friendly errors so a
     #      failure on the swapped provider is still caught. deepagents' own tail
     #      (skills, prompt caching, memory, approvals) still runs inside it; its
@@ -86,6 +90,7 @@ agent = define_deep_agent(
         CopilotKitMiddleware(),
         TodoListMiddleware(),
         AttachmentsMiddleware(),
+        WriteBeforeExecuteMiddleware(),
         ProviderPromptMiddleware(),
         FriendlyErrorMiddleware(),
         call_limit(),
