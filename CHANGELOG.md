@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Playbook for new projects.** `docs/MDA-COPILOTKIT-PLAYBOOK.md` distills what this build taught
+  about MDA and CopilotKit into one guide a coding agent can follow from an empty repo.
 - **File attachments.** A paperclip in the chat input attaches images, PDFs, CSV/TSV, text,
   Markdown, JSON or Excel files, up to 5 MB each. Images are downscaled to Claude's 2576 px limit.
   The agent saves each file to the conversation's sandbox under `/workspace/attachments/` and

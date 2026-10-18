@@ -2,6 +2,9 @@
 
 Working conventions for this repo. Architecture rationale lives in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the public overview is [README.md](README.md).
+The lessons that carry over to any MDA + CopilotKit project are distilled in
+[docs/MDA-COPILOTKIT-PLAYBOOK.md](docs/MDA-COPILOTKIT-PLAYBOOK.md). When you learn something new
+about either stack here, record it there too.
 
 ---
 

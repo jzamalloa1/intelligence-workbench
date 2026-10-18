@@ -834,6 +834,9 @@ Open <http://localhost:3000>.
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — why it's built this way: the research, the
   rejected approaches, and what was verified by execution rather than assumed
+- **[docs/MDA-COPILOTKIT-PLAYBOOK.md](docs/MDA-COPILOTKIT-PLAYBOOK.md)** — the reusable lessons for
+  building any MDA + CopilotKit app: rules, bootstrap order, traps, a symptom-to-fix table and the
+  files to copy. Written for a coding agent starting a new project.
 - **[CLAUDE.md](CLAUDE.md)** — working conventions, run commands, MDA constraints, gotchas
 - **[CHANGELOG.md](CHANGELOG.md)** — what each release contains
 
