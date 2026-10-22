@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **TypeScript 7.** The web app moves from TypeScript 5.9 to 7.0.2, the native compiler. Type checks
+  run in under a second; `next build` uses the `tsc` command, so no config changed.
 - **Stable Python.** The agent moves from Python 3.14.0rc3 to 3.14.8, pinned in `agent/.python-version`;
   uv 0.13 or later is now expected. No dependency changed.
 - **Playbook for new projects.** `docs/MDA-COPILOTKIT-PLAYBOOK.md` distills what this build taught

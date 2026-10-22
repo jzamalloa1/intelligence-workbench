@@ -616,7 +616,7 @@ trusting. The MDA row below is the proof: 0.7.3 → 0.8.3 was **four releases in
 | `@ag-ui/client` / `@ag-ui/core` | 1.0.2 | 1.0.2 | `core` is now a direct dependency (imported by `lib/workbench.ts`, previously hoisted) |
 | `next` | 16.3.6 | 16.3.6 | patch bump |
 | `react` / `react-dom` | 19.3.0 | 19.3.0 | minor bump; every peer range (`^19`) accepts it |
-| `typescript` | 5.9.3 | 7.0.2 | **deliberately behind** — 7 is the native-compiler major; not verified with Next 16's build-time typecheck |
+| `typescript` | 7.0.2 | 7.0.2 | moved 2026-10-21 — see "TypeScript 7" below |
 | `@types/node` | 24.x | 26.x | tracks the installed Node major (v24), not the newest types |
 
 The `@ag-ui/langgraph` / `@ag-ui/client` rule is "match CopilotKit, not npm latest": bumping
@@ -769,6 +769,16 @@ our `build_model()` instances but was a non-event, since the keys are in `.env` 
 Verified after the bump: `import agent` clean, `mda dev` compiles and registers `workbench`,
 `verify-toggle.mjs` passes, and a live research + `render_chart` run completed with zero
 console errors.
+
+**TypeScript 7 (2026-10-21).** 5.9.3 → 7.0.2, the native (Go) compiler and the latest stable; 7.1 is in
+beta. TS 7.0 ships only the `tsc` command: no JavaScript compiler API (`lib/typescript.js`) and no
+`tsserver.js`. Next 16.3 already runs the project-local `tsc` CLI during `next build` by default
+(`experimental.useTypeScriptCli`, documented under "Using TypeScript 7"), so no config changed.
+Nothing else here loads the TS API: there is no ESLint, and `tsx` uses esbuild. If a tool that
+needs the API is added (typescript-eslint, for one), point it at `@typescript/typescript6`. A full
+`tsc --noEmit` takes 0.7 s, and `next build`'s check 0.3 s. A planted type error is still caught.
+Editors keep their bundled TypeScript for language features, since the workspace package can't
+serve them. Checked: `tsc`, `next build`, all 15 `verify-*.mjs`, `verify-adapter.ts`.
 
 **Stable Python (2026-10-21).** The interpreter was 3.14.0rc3 until now, a leftover from the
 uv 0.8.22 stale-index era. It is now **3.14.8**, pinned in `agent/.python-version` (`3.14`), with uv

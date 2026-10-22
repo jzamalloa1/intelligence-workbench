@@ -124,7 +124,7 @@ Verified working together on 2026-10-17:
 | Frontend | `@copilotkit/react-core`, `react-ui`, `runtime`, `a2ui-renderer` | 1.78.0 (exact) |
 | | `@ag-ui/langgraph` | 0.0.44 (exact — what runtime 1.78.0 pins) |
 | | `@ag-ui/client`, `@ag-ui/core` | 1.0.2 (exact) |
-| | `next` / `react` / `typescript` | 16.3.6 / 19.3.0 / 5.9.3 |
+| | `next` / `react` / `typescript` | 16.3.6 / 19.3.0 / 7.0.2 |
 | Models | Anthropic | `claude-opus-5-5` lead, `claude-sonnet-5-5` worker, `claude-haiku-5-5` cheap |
 | | OpenAI | `gpt-5.6-terra` lead/worker, `gpt-5.6-luna` cheap |
 
@@ -155,8 +155,10 @@ Verified working together on 2026-10-17:
   `.python-version`) until the stack is verified on 3.15.
 - **`mda` needs Python ≥ 3.10.** On 3.9, uv resolves an ancient 0.4.0 that crashes on import.
   0.9 declares `>=3.11`.
-- **Leave TypeScript at 5.9.x** until Next's build-time typecheck is verified on 7.x, the
-  native-compiler major.
+- **TypeScript 7 works with Next ≥ 16.3.** TS 7.0 has no JavaScript API, and `next build` runs the
+  project-local `tsc` CLI by default, so no config is needed. Any tool that imports `typescript` as
+  a library (typescript-eslint, some framework plugins) must use `@typescript/typescript6` until
+  7.1 ships an API. Editors keep their bundled TypeScript.
 
 ---
 
