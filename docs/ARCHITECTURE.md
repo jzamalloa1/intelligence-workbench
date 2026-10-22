@@ -589,7 +589,7 @@ Things that cost time and are not obvious from the docs:
   import (`str | SomeTypedDict` — PEP 604 at runtime).
 - **Python 3.14 is fine.** The whole stack installs and imports clean; nothing is downgraded or
   excluded. Verified by real install, not just resolution.
-- **uv ≥ 0.12 required.** Older uv has a stale Python index (0.8.22 only knew 3.14.0rc3) and
+- **uv ≥ 0.13 (0.12 minimum).** Older uv has a stale Python index (0.8.22 only knew 3.14.0rc3) and
   lacks `[tool.uv] prerelease-package` for scoped prereleases.
 - `mda init` scaffolds `requires-python = ">=3.11"` and pins `managed-deepagents==0.6.1`
   exactly; we relax both.
@@ -770,10 +770,12 @@ Verified after the bump: `import agent` clean, `mda dev` compiles and registers 
 `verify-toggle.mjs` passes, and a live research + `render_chart` run completed with zero
 console errors.
 
-**Known drift, deliberately not fixed:** the interpreter is **3.14.0rc3**, not stable —
-a leftover from the uv 0.8.22 stale-index era (§6 above), which uv now warns about on every
-command. `cpython-3.14.7` is available via `uv python install 3.14`. Docs elsewhere that say
-"Python 3.14 (latest stable)" are, strictly, describing an RC.
+**Stable Python (2026-10-21).** The interpreter was 3.14.0rc3 until now, a leftover from the
+uv 0.8.22 stale-index era. It is now **3.14.8**, pinned in `agent/.python-version` (`3.14`), with uv
+0.13.4. uv 0.13 makes 3.15 its default, so the pin is what keeps the project on 3.14. 3.14.9 is out
+but not yet packaged by uv. Both the project `.venv` and the `mda` CLI (reinstalled at 0.9.0 with
+`--python 3.14.8`) were rebuilt. The lock did not change; `mda build --out` and `mda dev` work, and
+the server runs 3.14.8. The old rc3 interpreter is left installed for other projects that may use it.
 
 **Multiple pending interrupts (2026-09-27).** Subagents inherit the lead's `interrupt_on`, so
 parallel researchers can each pause on `execute`, which leaves N interrupts pending on one thread.

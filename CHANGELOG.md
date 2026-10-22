@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Stable Python.** The agent moves from Python 3.14.0rc3 to 3.14.8, pinned in `agent/.python-version`;
+  uv 0.13 or later is now expected. No dependency changed.
 - **Playbook for new projects.** `docs/MDA-COPILOTKIT-PLAYBOOK.md` distills what this build taught
   about MDA and CopilotKit into one guide a coding agent can follow from an empty repo.
 - **File attachments.** A paperclip in the chat input attaches images, PDFs, CSV/TSV, text,

@@ -785,7 +785,7 @@ Dark mode follows the system. On a phone, the view switch shows one panel group 
 
 ## Quickstart
 
-**Prerequisites:** Python 3.14, Node 20+, [uv](https://docs.astral.sh/uv/) ≥ 0.12.
+**Prerequisites:** Python 3.14, Node 20+, [uv](https://docs.astral.sh/uv/) ≥ 0.13.
 
 ```bash
 # 1. Install the Managed Deep Agents CLI (Python 3.10+ required)

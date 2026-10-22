@@ -42,7 +42,7 @@ curl -s -X POST http://127.0.0.1:2024/assistants/search \
 ## Toolchain rules
 
 - **Python only via uv.** `uv sync` / `uv run …` inside `agent/`. Never bare `python` or `pip`.
-- **Python 3.14**, uv **≥ 0.12**.
+- **Python 3.14** (stable 3.14.8; `agent/.python-version` pins `3.14` — uv 0.13 otherwise defaults to 3.15), uv **≥ 0.13**.
 - **No pre-releases in `agent/uv.lock`.** After any upgrade:
   `grep -E '^version = "[0-9.]+(a|b|rc|\.dev)[0-9]+"' agent/uv.lock` must print nothing. If a
   pre-release comes in through a dependency, add `[tool.uv] constraint-dependencies` for that one

@@ -120,7 +120,7 @@ Verified working together on 2026-10-17:
 | | `copilotkit` (Python) | 0.1.96 |
 | | `langchain` / `langchain-core` / `langgraph` | 1.4.4 / 1.6.11 / 1.2.14 |
 | | `langchain-anthropic` / `langchain-openai` | 1.7.6 / 1.7.0 |
-| | Python / uv | 3.14 / ≥ 0.12 |
+| | Python / uv | 3.14.8 (pinned `3.14` in `.python-version`) / ≥ 0.13 |
 | Frontend | `@copilotkit/react-core`, `react-ui`, `runtime`, `a2ui-renderer` | 1.78.0 (exact) |
 | | `@ag-ui/langgraph` | 0.0.44 (exact — what runtime 1.78.0 pins) |
 | | `@ag-ui/client`, `@ag-ui/core` | 1.0.2 (exact) |
@@ -151,6 +151,8 @@ Verified working together on 2026-10-17:
 - **MDA lives on two surfaces:** the `mda` CLI (a uv tool) and the project dependency. Upgrading
   one doesn't upgrade the other, and `uv tool install` never self-upgrades. Run `mda` directly
   (`mda dev .`), not through `uv run mda`.
+- **uv 0.13 defaults to Python 3.15.** Pin the project with `uv python pin 3.14` (writes
+  `.python-version`) until the stack is verified on 3.15.
 - **`mda` needs Python ≥ 3.10.** On 3.9, uv resolves an ancient 0.4.0 that crashes on import.
   0.9 declares `>=3.11`.
 - **Leave TypeScript at 5.9.x** until Next's build-time typecheck is verified on 7.x, the
