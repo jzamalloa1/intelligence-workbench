@@ -9,7 +9,12 @@ should not have to rediscover any of it.
 relative to its root. If you're working in a different repo, fetch the files from there. Every
 pattern here has a working, commented implementation you can copy.
 
-**Last verified:** 2026-10-17 against the versions in [§2](#2-versions-and-pinning-rules). The
+**Second source:** T-Minus, a later app on the same stack (2026-10-22 to 2026-10-27; private
+repo). Its patterns are shown inline, with code where it matters, because its files aren't
+public.
+
+**Last verified:** 2026-10-27. The Workbench's patterns on the versions it pins, T-Minus's on
+CopilotKit 1.82.0 and MDA 0.9.5 (both in [§2](#2-versions-and-pinning-rules)). The
 whole stack is in public beta and ships weekly. Treat each claim as true on those versions, and
 re-check it against the *installed package source* when versions move. The docs run ahead of
 the code, and sometimes they're simply wrong.
@@ -32,7 +37,7 @@ Sections:
 [3 Bootstrap](#3-bootstrap-from-zero-to-a-streamed-answer) ·
 [4 Agent side (MDA)](#4-agent-side-mda--deepagents) ·
 [5 Models](#5-models-claude-55-gpt-56-provider-agnostic) ·
-[6 The bridge (AG-UI adapter)](#6-the-bridge-ag-ui-langgraph-adapter) ·
+[6 The bridge (AG-UI adapter)](#6-the-bridge-ag-uilanggraph-adapter) ·
 [7 Frontend (CopilotKit v2)](#7-frontend-copilotkit-v2) ·
 [8 Security](#8-security-checklist) ·
 [9 Testing](#9-testing-without-spending-money) ·
@@ -60,11 +65,14 @@ Break any of these and you lose hours. Each one is explained further down.
    surface at the run root, and parallel subagents splice into gibberish in the lead's message.
 5. **Never set `backend`, `store`, `checkpointer`, `memory`, `skills` or `system_prompt` in
    `define_deep_agent`.** The runtime injects them. The system prompt is `instructions.md`.
-6. **Never run plain `mda build .` while `mda dev` runs.** It empties `.mda/build/`, which is
-   where the dev server keeps its threads. Use `mda build . --out <scratch>`.
-7. **No CopilotKit frontend tools for the agent.** Make every UI action a *backend* tool that the
+6. **Compile checks go to a scratch directory: `mda build . --out <scratch>`.** Before MDA 0.9.3,
+   a plain `mda build .` emptied `.mda/build/`, where the dev server kept its threads. Since
+   0.9.3 `mda dev` builds into `.mda/dev` and keeps them (verified on 0.9.4 and 0.9.5), but the
+   habit costs nothing.
+7. **No `useFrontendTool` for the agent.** Make every UI action a *backend* tool that the
    browser renders and acts on. A frontend tool in a mixed turn triggers a follow-up run, which
-   Claude 5.5 rejects with a prefill 400.
+   Claude 5.5 rejects with a prefill 400. The exception: a component the agent shows in the
+   chat, `useComponent` with **`followUp: false`** ([§7.11](#711-components-as-tools-usecomponent)).
 8. **Use `useInterrupt` for `interrupt_on` approvals, not `useHumanInTheLoop`.** Resume with
    exactly one decision per action request, in order.
 9. **Add the patched `LangGraphAgent` subclass on day one.** It fills the null tool name on late
@@ -105,7 +113,8 @@ flowchart LR
   filter on the frontend instead.
 - **CopilotKit Intelligence is optional.** It's a hosted persistence and observability layer
   (threads drawer, Inspector), reached from the runtime over a websocket. The agent never runs
-  there. See [§7.9](#79-runners-local-vs-intelligence-and-history) for why Local should be the default.
+  there. See [§7.9](#79-runners-local-vs-intelligence-and-history) for choosing a runner: since CopilotKit 1.79
+  Intelligence holds long runs, and T-Minus uses it as the default.
 
 ---
 
@@ -128,7 +137,24 @@ Verified working together on 2026-10-17:
 | Models | Anthropic | `claude-opus-5-5` lead, `claude-sonnet-5-5` worker, `claude-haiku-5-5` cheap |
 | | OpenAI | `gpt-5.6-terra` lead/worker, `gpt-5.6-luna` cheap |
 
+T-Minus, verified together on 2026-10-27:
+
+| Layer | Package | Version |
+|---|---|---|
+| Agent runtime | `managed-deepagents` (uv tool **and** project dep) | 0.9.5 (its `mda dev` runs langgraph-api 0.16.0rc5, MDA's own pin, not in your `uv.lock`) |
+| | `deepagents` / `copilotkit` (Python) / `ag-ui-langgraph` | 0.7.30 / 0.1.96 / 0.0.47 |
+| | `langchain` / `langchain-core` / `langgraph` | 1.4.7 / 1.6.13 / 1.2.16 |
+| | `langchain-anthropic` / `langchain-openai` | 1.7.6 / 1.7.2 |
+| Frontend | `@copilotkit/react-core`, `react-ui`, `runtime`, `a2ui-renderer` | 1.82.0 (exact; pulls in `@copilotkit/mcp-apps-renderer`) |
+| | `@ag-ui/langgraph` / `@ag-ui/client`, `@ag-ui/core` | 0.0.44 / 1.0.2 (still what runtime 1.82.0 pins) |
+| | `@modelcontextprotocol/ext-apps` | 1.7.5 (one copy, shared with the renderer) |
+| | `next` / `react` / `typescript` | 16.4.2 / 19.3.1 / 7.0.2 |
+
 **Pinning rules**
+
+- **Prefer releases at least two weeks old.** CopilotKit shipped 1.80, 1.81 and 1.82 in four
+  days, two of them with breaking changes. If you take one sooner, run every check first
+  ([§13](#13-upgrading-the-stack)).
 
 - **`@ag-ui/*`: match what `@copilotkit/runtime` depends on.** Read
   `node_modules/@copilotkit/runtime/package.json`. A newer `@ag-ui/langgraph` imports exports
@@ -226,7 +252,8 @@ The only author-settable fields on a static definition are `name`, `model`, `too
 `cache`, `debug`, `metadata` and `disable_memory`. 0.9 adds `instructions`, `mcp`, `sandbox`,
 `skills` and `memory`, but **only for a factory entrypoint**, where `agent` is a function of the
 runtime. Setting them on a static definition fails the build. Re-read
-`inspect.signature(define_deep_agent)` after every bump.
+`inspect.signature(define_deep_agent)` after every bump. To vary the model, prompt or tools per
+run, make `agent` a factory ([§4.11](#411-per-run-behaviour-the-factory-entrypoint)).
 
 **Check:** `mda dev . --no-browser`, then
 `curl -s -X POST http://127.0.0.1:2024/assistants/search -H 'content-type: application/json' -d '{}'`
@@ -409,6 +436,18 @@ interrupt_on={"execute": InterruptOnConfig(allowed_decisions=["approve","edit","
 - Gate only what's dangerous (`execute`). Gating something the agent calls constantly turns every
   run into a click-fest without adding safety.
 - Frontend handling is in [§7.4](#74-approvals-useinterrupt), and multiple pending interrupts in [§6.5](#65-multiple-pending-interrupts).
+- **Per-call approvals** (each gated call is its own interrupt, so one can be approved while
+  another waits): add `HumanInTheLoopMiddleware(interrupt_on=…, interrupt_mode="per_call")` to
+  your middleware yourself; MDA has no switch. Each interrupt's payload is then
+  `{type: "tool_approval", …}`, not `{action_requests, review_configs}`. The keyed resume
+  ([§6.5](#65-multiple-pending-interrupts)) answers it.
+- **Gate app actions, not just `execute`.** T-Minus gates a "move this roadmap card" tool and
+  shows the approval on the board itself. With two kinds pending, one `useInterrupt` per kind
+  stalls the turn (each resumes only when all its open interrupts are answered): use one
+  headless hook (`renderInChat: false`) that publishes them all, and render each where it
+  belongs.
+- CopilotKit adds client-side tool results on resume only for interrupts whose `reason` is
+  `tool_call`. `interrupt_on` ones arrive as `langgraph:interrupt`, so no duplicate is sent.
 
 ### 4.6 Memory and identity
 
@@ -421,6 +460,13 @@ interrupt_on={"execute": InterruptOnConfig(allowed_decisions=["approve","edit","
 - A per-user layer (`user=MemoryLayer(allow=...)`) exists, but it only mounts for *trusted
   identities*: a verified Studio user or a managed Slack DM. A browser reaching the agent through
   CopilotKit is neither. 0.9 adds a trusted-backend identity path. We haven't verified it.
+- **Per-user memory without a trusted identity** (T-Minus): your own store. Facts per user in
+  SQLite, behind an API scoped by the cookie user; the web server adds the user's facts to every
+  run's `context` (replacing anything the browser sent), and the factory
+  ([§4.11](#411-per-run-behaviour-the-factory-entrypoint)) appends them to the prompt, framed as facts, not
+  instructions. A fact the agent proposes saves itself only when the user's own message, sent
+  from that page, asked it to remember ([§7.12](#712-live-run-or-history)); anything else waits for a
+  click, so text from a web page can't plant itself in every later prompt.
 - Restart `mda dev` after adding `memory.py`, `identity.py`, `skills/`, `schedules/`,
   `channels/` or `sandbox/setup.sh`. These are discovered at compile time.
 
@@ -432,7 +478,8 @@ interrupt_on={"execute": InterruptOnConfig(allowed_decisions=["approve","edit","
   `configurable.copilotkit_forwarded_headers`, and deepagents passes the parent's configurable to
   subagents, so one header reaches every call. Read it with `langgraph.config.get_config()` inside
   the graph ([agent/agent_core/models.py](../agent/agent_core/models.py) `run_provider()`). We
-  didn't need a `context_schema`.
+  didn't need a `context_schema`. **This breaks once a run also carries `context`**, which a
+  factory entrypoint needs: see [§6.7](#67-configurable-and-context-cant-be-combined).
 - A conda env may set `VIRTUAL_ENV`. uv's warning that it "does not match the project
   environment" is harmless.
 
@@ -485,6 +532,45 @@ interrupt_on={"execute": InterruptOnConfig(allowed_decisions=["approve","edit","
   [web/src/lib/attachments.ts](../web/src/lib/attachments.ts) (note parser → file chips).
 - Cap non-image files at ~5 MB. Before the rewrite, the base64 rides in the run request, and AG-UI
   caps each SSE frame at 10 MB, with base64 adding a third.
+
+### 4.11 Per-run behaviour: the factory entrypoint
+
+Since 0.9, `agent` in `agent.py` can be a function that MDA calls on **every invocation**. Use
+it to vary the model, prompt or visible tools per run (T-Minus: a Quick/Deep toggle, and the
+user's memories in the prompt).
+
+```python
+def agent(runtime: ServerRuntime) -> DeepAgentDefinition:
+    execution = runtime.execution_runtime
+    context = execution.context if execution is not None else None   # the run's LangGraph context
+    quick = (context or {}).get("depth") == "quick"
+    return define_deep_agent(
+        name="myagent",
+        model=build_model("quick" if quick else "lead"),
+        subagents=build_subagents(),                                  # @cache it: same specs every call
+        middleware=[..., HideToolsMiddleware({"task"} if quick else ()), ...],
+    )
+```
+
+- It sees only the run's `context`, not its config or headers. Send what it needs as `context`
+  ([§6.7](#67-configurable-and-context-cant-be-combined)).
+- MDA also calls it for schema lookups (`assistants.read`) and state reads (`threads.read`), with
+  **no context**. It must return the **same graph shape every time**: vary models, prompts and
+  hidden tools, never nodes or subagents.
+- An exception inside it surfaces only as "agent factory failed". Test it offline: call it with
+  a stub runtime and inspect the definition and its middleware.
+- It compiles the agent on each call; nothing noticeable at T-Minus's size.
+
+### 4.12 More MDA facts
+
+- `mda` reads only the project's own `.env`. With one `.env` at the repo root, symlink it:
+  `ln -s ../.env agent/.env`.
+- MDA sends PostHog telemetry unless `MDA_TELEMETRY_DISABLED=1`.
+- Local schedules (0.9.4): an ephemeral schedule fires on time, but a persistent-thread schedule
+  fails provisioning with **403**, so a schedule can't post into an existing thread. LangSmith
+  Managed Tools need org access (`403 lmt_not_enabled`); bring your own search tool.
+- Author-middleware state keys survive MDA: a middleware's `state_schema` keys are in the
+  schema `mda dev` serves, and in each run's input.
 
 ---
 
@@ -647,6 +733,67 @@ marker** first, because the adapter spreads `forwardedProps` into the LangGraph 
 call fails ("Message not found") after the agent server lost the thread, for example after a
 rebuild. Say so in the UI.
 
+### 6.7 `configurable` and `context` can't be combined
+
+langgraph-api 0.16 answers **400 "Cannot specify both configurable and context"**, and the adapter
+always puts the forwarded `x-` headers in `config.configurable`. Given only `context`, the server
+copies it into `configurable` for the run, so `get_config()` readers (§4.7) keep working.
+Override the adapter's `shapePayloadConfig` to send everything as `context`. It's private in the
+types, and `clone()` builds per-request copies with `Object.create(prototype)`, so patch the
+**prototype**, and test through a clone:
+
+```ts
+const base = (LangGraphAgent.prototype as any).shapePayloadConfig;
+function shapeAsContext(this: MyLangGraphAgent, config: unknown) {
+  const shaped = base.call(this, config);
+  const { configurable, ...rest } = shaped.config ?? {};
+  return {
+    config: Object.keys(rest).length ? rest : undefined,       // other configurable keys could come from the browser: dropped
+    context: { copilotkit_forwarded_headers: configurable?.copilotkit_forwarded_headers ?? {}, /* depth, memories, … */ },
+  };
+}
+Object.defineProperty(MyLangGraphAgent.prototype, "shapePayloadConfig", { value: shapeAsContext, writable: true, configurable: true });
+```
+
+Its result is spread after `forwardedProps`, so a `context` the browser sends never reaches the
+agent: put only server-decided values there (the user's memories, from the stamped user).
+
+### 6.8 A shared canvas: one loop through both systems
+
+The Workbench shows agent work in the chat. T-Minus puts it on a canvas the user edits too:
+
+1. **The agent writes** with a backend tool (`write_brief`) that takes one object argument and
+   returns a `Command` writing it into a state key, which a middleware declares in its
+   `state_schema`.
+2. **It streams while the model types**: a `StateItem` in `StateStreamingMiddleware` maps the
+   tool argument to the key, so the browser gets PredictState updates mid-call.
+3. **The browser renders state, not messages**: `useAgent` with `OnStateChanged`, then a pure
+   render of `agent.state.brief`.
+4. **The user edits** with `agent.setState(...)`. The next run carries the whole state (every
+   input-schema key), so the agent sees the edited canvas.
+5. **The agent knows what changed**: the browser keeps a list of the user's edits since the last
+   turn and sends it with `useAgentContext`; a middleware adds the current canvas and that list
+   to the prompt, framed as decisions to build on (CopilotKit's own path doesn't reach the
+   model: §6.9).
+6. **Changes the user must approve** go through `interrupt_on` on a dedicated tool, rendered on
+   the canvas (§4.5).
+
+Edits with no message after them aren't persisted: they ride on the next run. Streaming facts:
+
+- `StateStreamingMiddleware` (0.0.47) skips tagging the model call right after one of its own
+  tools, so a second canvas tool lands all at once. Tag every call; the adapter ignores the tag
+  unless the streamed call is a tagged tool.
+- A `StateItem` must name one argument (`tool_argument=None` serialises as `null`, which the
+  browser rejects): give each tool a single object argument.
+- `@ag-ui/client` hands listeners the args as they were **before** the current delta, so state
+  lags one delta. Stub streams must send small deltas to show mid-stream states.
+
+### 6.9 App context never reaches the model
+
+`CopilotKitMiddleware` (Python `copilotkit` 0.1.96) reads `state.copilotkit.context`, but the
+adapter writes `useAgentContext` entries to `state["ag-ui"].context`. Read them yourself in a
+middleware and add them to the prompt.
+
 ---
 
 ## 7. Frontend (CopilotKit v2)
@@ -680,6 +827,15 @@ from tool calls). There's no event bookkeeping to get wrong.
   `.dark [data-copilotkit]`. Keep a `.dark` class on `<html>` for its `dark:` utilities.
 - The `flushSync` console errors during runs come from inside `@copilotkit/react-core`. They're
   dev noise, and harmless.
+- **Replacing a slot component:** the slot is typed as CopilotKit's component *with its
+  sub-parts*, and new versions add some (1.80 added `FeedbackComment` to the assistant message).
+  Copy them all with `Object.assign(Mine, CopilotChatAssistantMessage)`, not one by one.
+- The thumbs buttons appear only when you pass handlers; there's no built-in destination. (The
+  built-in rating with a comment box needs `messageFeedback` and Intelligence Learning.)
+- **The input's `disclaimer` slot is `pointer-events: none`.** A control there looks fine on the
+  welcome screen and can't be clicked once messages exist: add `pointer-events-auto`. Nothing in
+  the input's own slot can be clicked either (it sits under the message scroll area).
+- `CopilotSidebar` is fixed to the viewport and makes room with a margin on `<body>` from 768px.
 
 ### 7.3 Rendering tool calls
 
@@ -689,7 +845,9 @@ from tool calls). There's no event bookkeeping to get wrong.
   they render during streaming with partial args. `status` is `inProgress` → `executing` →
   `complete`, and `result` may be a JSON string.
 - **Rich UI should be a tool call.** Tool calls are in `MESSAGES_SNAPSHOT`, so they survive
-  reopening a conversation. Activity messages aren't (§7.6).
+  reopening a conversation. Activity messages didn't on 1.78; since 1.79 they survive through the
+  adapter's snapshot, the in-memory replay and Intelligence, but a history store that saves only
+  the snapshot still loses them after a restart: save the browser's final message list.
 
 ### 7.4 Approvals: `useInterrupt`
 
@@ -736,9 +894,11 @@ reopening, and the agent can reference them by id.
 
 **A2UI dashboards.** CopilotKit's built-in A2UI paths don't fit:
 
-- `CopilotRuntime({ a2ui })` paints from an `a2ui-surface` *activity message*. Activity messages
-  aren't in `MESSAGES_SNAPSHOT`, so the dashboards vanish on reopen.
-- `generate_a2ui` is a LangChain-JS tool that makes its own model call from the web server.
+- `CopilotRuntime({ a2ui })` paints from an `a2ui-surface` *activity message*, which vanished on
+  reopen on 1.78 (see §7.3 for 1.79+).
+- `generate_a2ui` is a LangChain-JS tool that makes its own model call from the web server, with
+  the whole conversation. It binds to the request's model **before** any per-call provider
+  switch (an OpenAI conversation would draw with Claude), and it lands in the chat.
 
 What works:
 
@@ -752,7 +912,22 @@ What works:
 - Keep the Python catalog and the TS catalog listing the same components and props.
 - **zod trap:** the renderer uses zod 3.25, and your app may use zod 4 (`zod/v3`). Letting `tsc`
   infer `createCatalog` generics across both makes `tsc --noEmit` hang for minutes. Type renderers
-  with plain prop types, and pass the catalog through `unknown`.
+  with plain prop types, and pass the catalog through `unknown`. With zod 4 schemas, custom
+  components also export as `type: "unknown"`: write the catalog with `zod/v3`.
+- **The catalog is the security wall.** A2UI renders into your page, not a sandbox. Leave out
+  `Image`, `Video`, `AudioPlayer`, buttons and inputs, so nothing loads a URL or acts. Refuse
+  anything outside the catalog in the tool, and drop it in the view.
+- **Theme (1.82+):** the basic components read `--a2ui-color-surface`, `--a2ui-color-border`,
+  `--a2ui-color-muted`, `--a2ui-color-error` and `--a2ui-primary-color`, with `#fff`, `#ccc`,
+  `#666` and friends as fallbacks. Set them from your theme; overrides keyed on the old inline
+  colours stop matching (dark-mode cards turn white).
+- **Progressive painting** (T-Minus): put the component list in agent state and stream it
+  (§6.8). The renderer re-processes the whole operations list on each update and skips
+  `createSurface` once the surface exists, so tiles appear as the model writes them. Prune
+  children that haven't arrived yet.
+- The full inline schema is large (24 KB for 9 components). Export a compact form for the tool
+  description, with a `--check` mode to keep it in sync; props only the app sets can be marked
+  and left out.
 
 Files: [agent/tools/dashboard.py](../agent/tools/dashboard.py),
 [web/src/components/dashboard/](../web/src/components/dashboard/).
@@ -772,11 +947,22 @@ argument. The widget is model-written code, so keep **three walls**:
 3. **No CSP blocks self-navigation.** Close the widget when its frame fires a second `load`. The
    request has already left by then, but the page stops.
 
+- **Never hand the renderer partial html** (1.79.1 to 1.82.0): while html streams, its preview
+  sets `body.innerHTML` in a second frame with **no CSP**, so an agent-written `<img src>` loads
+  from anywhere. Render your own inert preview (a frame without `allow-scripts`, scripts and URL
+  attributes stripped), and give the renderer only complete html.
+- **Chart libraries:** self-host them (T-Minus: D3 7.9.0, Chart.js 4.4.1 in `public/vendor/`)
+  and add each to `script-src` by **exact URL**. A directory or host allowlist lets the widget
+  load your own API as a script.
+
 Register no `useSandboxFunctions` host functions unless you've thought about what a hostile page
 could call. File: [web/src/components/WidgetCard.tsx](../web/src/components/WidgetCard.tsx). Test it
 with [web/scripts/verify-widget.mjs](../web/scripts/verify-widget.mjs), which attacks with
 `fetch`, a beacon, a remote image and a CDN script, and includes a control that proves the
-capture works.
+capture works. **Correction (2026-10-22):** Playwright doesn't see a websandbox frame's
+subresource requests, only its navigations, so that check passes even for a leaky widget. Prove
+it with Chrome's NetLog, or point every URL a widget could load at a local "leak" server and
+fail on any hit (keeping a control request that must hit it).
 
 **Placement:** chat cards get cramped. Add a full-screen view (a second, fresh render) rather than
 moving generative UI into a side panel.
@@ -793,6 +979,10 @@ moving generative UI into a side panel.
 - `enableInspector` defaults **on** in development. It mounts a floating launcher and a "View in
   Inspector" button on every assistant message. Default it off, behind an env var.
 - `onError` is the only place a runner connection drop becomes visible. Surface it as a banner.
+- On Intelligence, **a run the route refuses (404) is reported as finished**, with no error and no
+  `onError`. Surface refusals in your own UI.
+- A message sent while CopilotKit remounts (a runner switch) is ignored, though it stays in the
+  box. Wait for the new connect.
 
 ### 7.8 The route
 
@@ -802,16 +992,19 @@ moving generative UI into a side panel.
   over HTTP. A curl check looks empty even on success, so check the agent log for
   `Background run succeeded` instead.
 - Set `maxDuration` high. Runs last minutes.
+- Export `PATCH` and `DELETE` from the catch-all route: the threads drawer renames and deletes
+  with them (405 otherwise), and thread mutations need `{ agentId }` in the body.
 
 ### 7.9 Runners: Local vs Intelligence, and history
 
 - Exported runners: `InMemoryAgentRunner` and `IntelligenceAgentRunner`. `SqliteAgentRunner` is
   **not** in `@copilotkit/runtime`. It ships separately as `@copilotkit/sqlite-runner`, and it has
   no per-user ownership.
-- **Make Local the default.** Intelligence's hosted realtime gateway gives up reconnecting after
-  **60 s** (`reconnectGiveUpMs`, not configurable through any public option). Long runs and
-  human-paced approvals hit that ceiling: the agent *finishes* (`run_exec_ms=356661` in the log),
-  and the browser throws the result away.
+- **Choosing a runner.** On 1.78, Intelligence's hosted realtime gateway gave up reconnecting
+  after **60 s** (`reconnectGiveUpMs`): the agent *finished* (`run_exec_ms=356661` in the log),
+  and the browser threw the result away, so the Workbench made Local the default. **CopilotKit
+  1.79 removed that ceiling** (75 s of silence, no drop), and T-Minus runs Intelligence by
+  default with multi-minute research runs. Keep Local as a switch.
 - **Durable local history means your own store.** `InMemoryAgentRunner` forgets everything on
   restart, and `mda dev`'s thread persistence is wiped by every compile (rule 6). Subclass the
   runner:
@@ -824,6 +1017,75 @@ moving generative UI into a side panel.
   Saving must never fail a run.
   [web/src/lib/server/history-runner.ts](../web/src/lib/server/history-runner.ts).
 - A deployed MDA agent has durable threads. The wipe-on-compile problem is local only.
+- **Intelligence facts** (T-Minus, free Developer plan):
+  - the threads drawer (`CopilotThreadsDrawer`) is a web component in its own shadow DOM:
+    theme it with `--cpk-drawer-*` custom properties; it draws itself 20rem wide;
+  - threads are kept **72 hours**, 200 at most; `memory: false` (§4.6);
+  - every event carries `organization_id` and `project_id`, which `@ag-ui/client` strips with a
+    warning per field (harmless);
+  - **Learning** (entitled) doesn't reach a LangGraph agent: results come through Enterprise
+    Learning MCP tools or a learned-skills registry that neither adapter reads, and by default
+    one project-wide container mixes every user's threads.
+- **Intelligence replays old errors as new ones.** It stores a failed run's `RUN_ERROR` and
+  replays it on every connect; CopilotKit (through 1.82.0) classes it as history for the run's
+  state but still passes it to `emitError`, so the dev console and Next's overlay report it each
+  time the room opens. Every stored event carries `metadata.cpki_ingested`, a UUIDv7 whose first
+  48 bits are when it was stored. Skip run errors stored over a minute earlier:
+
+  ```ts
+  import { CopilotKitCore, CopilotKitCoreErrorCode } from "@copilotkit/react-core/v2";
+  const proto = CopilotKitCore.prototype as any;
+  const emit = proto.emitError;
+  proto.emitError = function (params: { code: string; context?: { event?: any } }) {
+    const id = params.context?.event?.metadata?.cpki_ingested;
+    const at = typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7/i.test(id) ? parseInt(id.replace("-", "").slice(0, 12), 16) : null;
+    if (params.code === CopilotKitCoreErrorCode.AGENT_RUN_ERROR_EVENT && at !== null && Date.now() - at > 60_000) return Promise.resolve();
+    return emit.call(this, params);
+  };
+  ```
+
+### 7.10 MCP Apps
+
+`CopilotRuntime({ mcpApps: { servers } })` offers an MCP server's UI tools to the agent and
+renders the app's view on the page; the view's own calls to its server come back as runs with
+`forwardedProps.__proxiedMCPRequest`, answered without the agent.
+
+- **The view's origin.** Up to 1.79.1 both srcdoc frames had `allow-same-origin`, so the view ran
+  with *your* origin (page, storage, cookies, your API as the user). Since 1.80
+  (`@copilotkit/mcp-apps-renderer`) the default is `allow-scripts allow-forms`; never set
+  `mcpApps.allowSameOriginFallback` for an app you didn't write. To narrow the view to scripts
+  only, patch `AppBridge.prototype.sendSandboxResourceReady` (from `ext-apps`) to send
+  `sandbox: "allow-scripts"`, as the MCP Apps spec's example does.
+- **One server down fails every run on Intelligence**: its runtime applies the middleware with
+  `discoveryFailureMode: "throw"` (Local only logs it). The runtime re-reads `mcpApps.servers` on
+  each request, so make it a getter over a quick reachability check (a 300 ms TCP connect,
+  refreshed before each POST), and a stopped server is simply not offered.
+- A history runner must pass the proxied calls through, not save them as the conversation.
+- The ext-apps demo servers' entry points listen on every interface with CORS open. Serve their
+  `createServer()` on 127.0.0.1 with the SDK's Host and Origin guards, one instance per request.
+- Only UI tools: a non-UI tool from the same server in a mixed turn repeats the follow-up 400.
+
+### 7.11 Components as tools: `useComponent`
+
+`useComponent({ name, parameters, render, followUp: false })` lets the agent show a component in
+the chat (T-Minus: option cards, a "remember this?" card). `CopilotKitMiddleware` hands the call
+to the browser and gives the model a stand-in result, so the turn carries on, and with
+`followUp: false` no follow-up run starts (no prefill 400). A click that answers it sends a plain
+user message (`agent.addMessage` + `copilotkit.runAgent`). `generateSandboxedUi` hard-codes
+`followUp: true`, so it stays out.
+
+### 7.12 Live run or history?
+
+Something that should happen once, live (auto-save a fact, focus a panel), must not happen
+again when a conversation reopens. Two traps:
+
+- React's `isRunning` misses a run that starts and ends between two renders.
+- `onRunInitialized` also fires when a room **opens**, before the history arrives (no messages),
+  so it can't tell a live run from history. Reopening re-ran a "save" the user had undone.
+
+What works: a message the user sent from this page is one added with `agent.addMessage`, whose
+`onNewMessage` carries no run `input`; history arrives as run events (with one) or a snapshot
+(none). Record those ids, and act at most once per call per page.
 
 ---
 
@@ -832,9 +1094,15 @@ moving generative UI into a side panel.
 - [ ] **Identity is server-side.** Read the user from an httpOnly cookie in the route. Overwrite
       any client-sent user header before forwarding (`headers.delete(USER_HEADER);
       headers.set(USER_HEADER, user.id)`). Never read the user from a body or a client header.
-- [ ] **Ownership checked on every agent call.** Match `/agent/:id/(run|connect|stop)`, extract
-      the thread id from the body (or the path for `stop`), and return **404** for someone else's
-      thread, the same as for one that doesn't exist.
+- [ ] **Ownership checked on every agent call, on every runner.** Extract the thread id from the
+      body (or the path for `stop`), and return **404** for someone else's thread, the same as
+      for one that doesn't exist. Cover `run`, `connect`, `stop`, **`suggest`** (it runs the
+      agent on the body's thread with no runner), `annotate` and the thread endpoints. On
+      Intelligence, reads are scoped per user, but **a run on another user's thread id still
+      reaches the agent**: claim each thread on its first run in your own table and check it.
+      Match paths by their **last** segments, as the runtime's router does: a first-match regex
+      let `/agent/a/connect/agent/b/stop/<thread>` pass as a connect while the runtime ran a
+      stop.
 - [ ] **CopilotKit's `/api/copilotkit/threads…` endpoints are closed on the local runner.** They
       list, read and *clear* every in-process conversation, with no user filter. Return 404. Keep
       them only on Intelligence, which scopes by `identifyUser`. History goes through your own
@@ -848,7 +1116,10 @@ moving generative UI into a side panel.
 - [ ] **Gate `execute`** with `interrupt_on`, and show a plain-language description of each
       command.
 - [ ] **Agent memory is shared and untrusted.** Keep authority in code, never in memory.
-- [ ] **Agent-written HTML gets three walls** (§7.6).
+- [ ] **Agent-written HTML gets three walls** (§7.6), and the renderer never gets partial html.
+- [ ] **MCP App views have an opaque origin** (§7.10), and their servers listen on localhost.
+- [ ] **The A2UI catalog has nothing that loads a URL or acts** (§7.6).
+- [ ] **Per-user memory is added server-side**, from the cookie user, never from the browser.
 - [ ] **Secrets:** `.env` ignored before the first commit, `.env.example` with names only. Never
       echo a value. On deploy, non-reserved `.env` entries become hosted secrets, and `.env` is
       never uploaded as source.
@@ -886,7 +1157,12 @@ await page.route("**/api/copilotkit/agent/*/run", async (route) => {
 ```
 
 - **Every script that loads the live page must route the run endpoint** to a stub or abort.
-  Starter cards send a prompt on click.
+  Starter cards send a prompt on click. A check that needs a scripted agent (a stub on the
+  server) must **refuse to start** unless `/info` reports that agent, or it makes a paid run
+  against a normal dev server (it happened once).
+- Stub the **connect** stream too, to test what reopening a room does.
+- Wait for the outcome you assert (the reply), not for "Idle": "Idle" can still show before a
+  Cloud run visibly starts.
 - **For anything that depends on "seen streaming" vs "replayed",** `route.fulfill` delivers the
   whole stream at once. Serve the stub from a local HTTP server that writes events with delays,
   and use `route.continue({ url: STUB })`.
@@ -952,17 +1228,36 @@ Examples: [web/scripts/](../web/scripts/), with one `verify-*.mjs` per feature.
 | `RuntimeError: … multiple pending interrupts … specify the interrupt id` | Parallel subagents paused; bare resume | Keyed resume map (§6.5) |
 | Approval card never appears | Using `useHumanInTheLoop`, or not parsing the stringified `event.value` | `useInterrupt` + defensive JSON parse |
 | Resume raises on decision count | Decisions ≠ action requests | One per request, in order |
-| All local conversations gone from agent server | `mda build .` / `mda dev` restart emptied `.mda/build/` | `--out <scratch>`; own history store |
+| All local conversations gone from agent server | Before MDA 0.9.3: `mda build .` / `mda dev` restart emptied `.mda/build/` | `--out <scratch>`; own history store |
 | `LLM_PROVIDER=openai mda dev .` ignored | `.env` overrides shell | Edit `.env`, or use a per-run header |
-| "Runner connection dropped" on long runs (Cloud mode) | Intelligence gateway's 60 s reconnect ceiling | Local runner default; banner via `onError` |
+| "Runner connection dropped" on long runs (Cloud mode) | CopilotKit ≤ 1.78: the gateway's 60 s reconnect ceiling | Upgrade (1.79 removed it); banner via `onError` |
 | "Unexpected token 'd', "data: {"ty"… is not valid JSON" after toggling runner | Client cached transport negotiation | `key={mode}` remount |
-| Dashboards/widgets gone after reopening | Rendered from activity messages | Render from tool calls (§7.6) |
+| Dashboards/widgets gone after reopening | Activity messages (≤ 1.78), or a history store that saves only the snapshot | Render from tool calls or state; save the browser's final message list |
 | `tsc --noEmit` runs for minutes | zod 3 / zod 4 generic inference in `createCatalog` | Plain types, cast through `unknown` |
 | "View in Inspector" under every message, floating launcher | Inspector defaults on in dev | `enableInspector={false}` |
 | Usage meter far below the real bill | `RUN_FINISHED.usage` ignores non-streaming subagents | Read `on_chat_model_end` RAW events |
 | Model pinned to an alpha/beta Python package | `--prerelease allow`, or a dependency's pre-release fallback | Scoped `constraint-dependencies` |
 | `write_todos` not found / plan board empty | No `TodoListMiddleware` | Add it explicitly |
 | Researchers raising shell approvals | Subagents get `execute` from the sandbox | `HideToolsMiddleware({"execute"})` |
+| Run 400 "Cannot specify both configurable and context" | The adapter sends headers in `configurable`, and the run also has `context` | Everything as `context` (§6.7) |
+| "agent factory failed" | An exception inside the MDA factory | Call the factory offline with a stub runtime (§4.11) |
+| Every Cloud run fails "MCP tool discovery failed"; Local works | An MCP Apps server is down, and Intelligence throws on discovery | Offer servers only while listening (§7.10) |
+| The same error appears every time one room opens | Intelligence replays the stored `RUN_ERROR` | Filter `emitError` by `cpki_ingested` age (§7.9) |
+| A "do once" action (an auto-save) repeats when a room reopens | `onRunInitialized` fires on connect | Key on messages sent with `addMessage` (§7.12) |
+| A control under the chat input can't be clicked once messages exist | `disclaimer` slot is `pointer-events: none` | `pointer-events-auto` |
+| An MCP App view can read the page or cookies | CopilotKit ≤ 1.79.1 gave it `allow-same-origin` | Upgrade, or patch `sendSandboxResourceReady` (§7.10) |
+| Custom A2UI components export as `type: "unknown"` | zod 4 schemas, zod 3 renderer | `zod/v3` for the catalog |
+| An OpenAI conversation draws its dashboard with Claude | `generate_a2ui` binds the model before the provider switch | Your own draw tool |
+| `useAgentContext` values never reach the model | Written to `state["ag-ui"]`, read from `state.copilotkit` | Read them in your own middleware (§6.9) |
+| A second canvas tool lands all at once, unstreamed | `StateStreamingMiddleware` skips the call after its own tool | Tag every model call (§6.8) |
+| A turn with two approval kinds never resumes | One `useInterrupt` per kind | One headless hook for all (§4.5) |
+| A run the route refused shows as finished, no error | Intelligence client treats the 404 as a finished run | Surface refusals in your own UI |
+| Drawer rename or delete fails with 405 | The route exports only `GET` and `POST` | Export `PATCH` and `DELETE` |
+| A widget network check passes even for a leaky widget | Playwright doesn't see websandbox subresource requests | NetLog, or a local leak server |
+| Dev terminal: `[ag-ui][enforce] Removed unrecognised material…` | Intelligence adds `organization_id` / `project_id` | Harmless |
+| `next build`: `Property 'FeedbackComment' is missing` on a custom assistant message | 1.80 added a sub-part to the slot's type | `Object.assign(Mine, CopilotChatAssistantMessage)` |
+| A2UI cards turn white in dark mode after upgrading | 1.82 moved to `--a2ui-*` variables | Set the variables from your theme |
+| `tsc --noEmit` passes, `next build` fails after a bump | Stale `tsconfig.tsbuildinfo` (TS 7 incremental) | Delete it before checking |
 
 **Where to look:**
 
@@ -1036,7 +1331,11 @@ The cadence is fast: MDA shipped four releases in three days once. Procedure:
    thinking display), new 400s (forced `tool_choice`, prefill, thinking binding), new stop reasons
    (refusal), prices and long-context rate cards, and whether `langchain-*` has a profile for the
    new model ID.
-5. **Re-check every workaround** in §6 after each bump, and record surprises with the date. A "hard
+5. **Re-check every workaround** in §6 after each bump, and record surprises with the date.
+   Before `tsc --noEmit`, **delete `tsconfig.tsbuildinfo`**: TS 7's incremental check passed on
+   stale library types after a CopilotKit bump while `next build` failed. Test a bump in a copy
+   of the project (its own `node_modules` and a dev server on another port), and run the new
+   MDA CLI with `uvx --from managed-deepagents==X mda …` before upgrading the shared uv tool. A "hard
    constraint" on a beta SDK has a shelf life: MCP was removed in 0.6 and came back in 0.7.
 
 ---
@@ -1077,6 +1376,7 @@ What to copy from the source repo, and what each file solves.
 | Prices (dated, sourced), context budget mirror | [web/src/lib/pricing.ts](../web/src/lib/pricing.ts) |
 | Zero-cost browser checks, adapter replay | [web/scripts/](../web/scripts/) |
 | Full chronological findings log | [docs/ARCHITECTURE.md](ARCHITECTURE.md) (§4d and §6) |
+| T-Minus patterns (private repo; shown inline) | factory §4.11, `context` §6.7, shared canvas §6.8, replayed errors §7.9, MCP Apps §7.10, `useComponent` §7.11, live vs history §7.12 |
 | Repo working rules | [CLAUDE.md](../CLAUDE.md) |
 
 ### Prompt to hand a new coding agent
